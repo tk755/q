@@ -91,7 +91,8 @@ COMMANDS = [
     },
     {
         'flags': ['-c', '--code'],
-        'description': f'generate a code snippet (default {DEFAULT_CODE} unless specified)',
+        'description': f'generate a code snippet (default {DEFAULT_CODE})',
+        'clip_output': True,
         'model_args': {
             'model': FULL_LLM,
         },
@@ -108,7 +109,8 @@ COMMANDS = [
     },
     {
         'flags': ['-s', '--shell'],
-        'description': f'generate a shell command (default {DEFAULT_SHELL} system unless specified)',
+        'description': f'generate a shell command (default {DEFAULT_SHELL})',
+        'clip_output': True,
         'messages': [
             { 
                 'role': 'developer', 
@@ -123,6 +125,7 @@ COMMANDS = [
     {
         'flags': ['-x', '--regex'],
         'description': 'generate a regex pattern',
+        'clip_output': True,
         'messages': [
             { 
                 'role': 'developer', 
@@ -136,7 +139,7 @@ COMMANDS = [
     },
     {
         'flags': ['-i', '--image'],
-        'description': 'generate an image (note: very expensive)',
+        'description': 'generate an image (very expensive)',
         'model_args': {
             'model': MINI_LLM,
             'tools': [{
@@ -149,6 +152,27 @@ COMMANDS = [
             {
                 'role': 'user',
                 'content': 'Generate an image of the following: {text}.'
+            }
+        ]
+    },
+    {
+        'flags': ['-w', '--web'],
+        'description': 'search the internet (more expensive)',
+        'model_args' : {
+            'model': MINI_LLM,
+            'tools': [{
+                'type': 'web_search_preview',
+                'search_context_size': 'low'
+            }],
+        },
+        'messages': [
+            { 
+                'role': 'developer', 
+                'content': 'You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence.'
+            },
+            {
+                'role': 'user',
+                'content': 'Fetch the following information: {text}.'
             }
         ]
     },
@@ -166,27 +190,6 @@ COMMANDS = [
             {
                 'role': 'user',
                 'content': 'Rephrase the following text: {text}'
-            }
-        ]
-    },
-    {
-        'flags': ['-w', '--web'],
-        'description': 'search the internet (note: more expensive)',
-        'model_args' : {
-            'model': MINI_LLM,
-            'tools': [{
-                'type': 'web_search_preview',
-                'search_context_size': 'low'
-            }],
-        },
-        'messages': [
-            { 
-                'role': 'developer', 
-                'content': 'You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence.'
-            },
-            {
-                'role': 'user',
-                'content': 'Fetch the following information: {text}.'
             }
         ]
     }
@@ -307,7 +310,7 @@ def run_command(cmd: Dict, text: str, **opt_args):
         print(text_response)
 
     # copy text response to clipboard
-    if not image_response and not opt_args.get('no-clip', False):
+    if not image_response and not opt_args.get('no-clip', False) and cmd.get('clip_output', False):
         try:
             pyperclip.copy(text_response)
             cprint(f'Output copied to clipboard.', 'yellow')
