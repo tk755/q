@@ -9,10 +9,10 @@ In either case you will be asked for an OpenAI API key the first time `q` is pro
 
 ## Prebuilt Executable
 
-Download the appropriate binary for your system from the [Releases page](https://github.com/tk744/q/releases/latest) to a directory in your path (e.g. `~/.local/bin/`) and make it executable:
+Download the appropriate binary for your system from the [Releases page](https://github.com/tk755/q/releases/latest) to a directory in your path (e.g. `~/.local/bin/`) and make it executable:
 
 ```
-wget -qO ~/.local/bin/q https://github.com/tk744/q/releases/download/v1.2/q-v1.2-linux-x86_64 && chmod +x ~/.local/bin/q
+wget -qO ~/.local/bin/q https://github.com/tk755/q/releases/download/v1.2/q-v1.2-linux-x86_64 && chmod +x ~/.local/bin/q
 ```
 
 Note that these binaries are built on the latest version of each system using GitHub Actions, and therefore may not work on older system versions. If you encounter issues, consider using the script directly.
@@ -22,7 +22,7 @@ Note that these binaries are built on the latest version of each system using Gi
 Requires Python 3.8+. Clone the repository and install the `requirements.txt` file, then run the script directly or copy it to a directory in your path (e.g. `~/.local/bin/`) to run it globally:
 
 ```
-git clone https://github.com/tk744/q.git
+git clone https://github.com/tk755/q.git
 cd q && pip install -r requirements.txt
 cp q ~/.local/bin/q
 ```
