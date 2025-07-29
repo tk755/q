@@ -223,7 +223,7 @@ def get_client() -> openai.OpenAI:
     api_key =_load_resource('openai_key', None)
     
     if api_key is None:
-        cprint(f'Error: OpenAI API key not found. Please paste your API key: ', 'red', end='', flush=True)
+        cprint(f'Error: OpenAI API key not found. Please paste your API key: ', 'red', end='', flush=True, file=sys.stderr)
         api_key = getpass.getpass(prompt='')
         _save_resource('openai_key', api_key)
 
@@ -234,7 +234,7 @@ def get_client() -> openai.OpenAI:
             return client
         
         except openai.APIError:
-            cprint(f'Error: OpenAI API key not valid. Please paste your API key: ', 'red', end='', flush=True)
+            cprint(f'Error: OpenAI API key not valid. Please paste your API key: ', 'red', end='', flush=True, file=sys.stderr)
             api_key = getpass.getpass(prompt='')
             _save_resource('openai_key', api_key)
 
@@ -279,7 +279,7 @@ def run_command(cmd: Dict, text: str, **opt_args):
         if len(user_msg_indices) > 1:
             messages = messages[:user_msg_indices[-2]] + messages[user_msg_indices[-1]:]
         else:
-            cprint(f'Error: No previous command to overwrite.', 'red')
+            cprint(f'Error: No previous command to overwrite.', 'red', file=sys.stderr)
             sys.exit(1)
 
     # set max tokens for long responses
@@ -299,16 +299,16 @@ def run_command(cmd: Dict, text: str, **opt_args):
     # print output
     if opt_args.get('verbose', False):
         # model parameters
-        cprint('MODEL PARAMETERS:', 'red')
+        cprint('MODEL PARAMETERS:', 'red', file=sys.stderr)
         for arg in model_args:
-            print(colored(f'{arg}:', 'green'), model_args[arg])
+            print(colored(f'{arg}:', 'green'), model_args[arg], file=sys.stderr)
         # message history
-        cprint('\n'+'MESSAGES:', 'red')
+        cprint('\n'+'MESSAGES:', 'red', file=sys.stderr)
         for message in messages:
             if message.get('role'):
-                print(colored(f'{message["role"].capitalize()}:', 'green'), message['content'])
+                print(colored(f'{message["role"].capitalize()}:', 'green'), message['content'], file=sys.stderr)
             elif message.get('type'):
-                print(colored(f'{message["type"]}:', 'green'), message['id'])
+                print(colored(f'{message["type"]}:', 'green'), message['id'], file=sys.stderr)
     elif not image_response:
         print(text_response)
 
@@ -316,7 +316,7 @@ def run_command(cmd: Dict, text: str, **opt_args):
     if not image_response and not opt_args.get('no-clip', False) and cmd.get('clip_output', False):
         try:
             pyperclip.copy(text_response)
-            cprint(f'Output copied to clipboard.', 'yellow')
+            cprint(f'Output copied to clipboard.', 'yellow', file=sys.stderr)
         except pyperclip.PyperclipException:
             pass # ignore clipboard errors
 
@@ -325,24 +325,24 @@ def run_command(cmd: Dict, text: str, **opt_args):
         image_file = 'q_' + ''.join(c for c in text if c not in string.punctuation).replace(' ', '_') + '.png'
         with open(image_file, 'wb') as f:
             f.write(base64.b64decode(image_response.result))
-        cprint(f'Image saved to {image_file}.', 'yellow')
+        cprint(f'Image saved to {image_file}.', 'yellow', file=sys.stderr)
         
 def validate_commands():
     # check if there is a default command
     if len([cmd for cmd in COMMANDS if not cmd['flags']]) == 0:
-        cprint(f'Error: No default command found.', 'red')
+        cprint(f'Error: No default command found.', 'red', file=sys.stderr)
         sys.exit(1)
 
     # check if there is more than one default command
     if len([cmd for cmd in COMMANDS if not cmd['flags']]) > 1:
-        cprint(f'Error: More than one default command found. If a custom command was added, it is missing a flag.', 'red')
+        cprint(f'Error: More than one default command found. If a custom command was added, it is missing a flag.', 'red', file=sys.stderr)
         sys.exit(1)
 
     # check if there are duplicate commands
     cmd_flags = [flag for cmd in COMMANDS for flag in cmd['flags']]
     dup_flags = set(flag for flag in cmd_flags if cmd_flags.count(flag) > 1)
     if dup_flags:
-        cprint(f'Error: Duplicate commands found: {", ".join(dup_flags)}.', 'red')
+        cprint(f'Error: Duplicate commands found: {", ".join(dup_flags)}.', 'red', file=sys.stderr)
         sys.exit(1)
 
 def main(args):
@@ -369,22 +369,22 @@ def main(args):
     # check if there is more than one command
     cmd_flags = [flag for cmd in COMMANDS for flag in cmd['flags']]
     if len([arg for arg in args[1:] if arg in cmd_flags]) > 1:
-        cprint(f'Error: Only one command may be provided.', 'red')
+        cprint(f'Error: Only one command may be provided.', 'red', file=sys.stderr)
         sys.exit(1)
 
     # check if there is a command that is not the first argument
     if len([arg for arg in args[1:] if arg in cmd_flags]) == 1 and args[1] not in cmd_flags:
-        cprint(f'Error: Command must be the first argument.', 'red')
+        cprint(f'Error: Command must be the first argument.', 'red', file=sys.stderr)
         sys.exit(1)
 
     # check if the first argument is an invalid command
     if args[1].startswith('-') and args[1] not in cmd_flags:
-        cprint(f'Error: Invalid command "{args[1]}".', 'red')
+        cprint(f'Error: Invalid command "{args[1]}".', 'red', file=sys.stderr)
         sys.exit(1)
 
     # check if there is no text provided for a command
     if args[1] in cmd_flags and len(args) < 3:
-        cprint(f'Error: No text provided.', 'red')
+        cprint(f'Error: No text provided.', 'red', file=sys.stderr)
         sys.exit(1)
 
     # extract options and remove them from the text
@@ -406,8 +406,12 @@ def main(args):
                         opt_args[opt['name']] = True
                         break
                 else:
-                    cprint(f'Error: Invalid option "-{flags}".', 'red')
+                    cprint(f'Error: Invalid option "-{flags}".', 'red', file=sys.stderr)
                     sys.exit(1)
+
+    # mask stderr if stdout is being piped
+    if not sys.stdout.isatty():
+        sys.stderr = open(os.devnull, 'w')
 
     # run command
     for cmd in COMMANDS:
