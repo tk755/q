@@ -17,7 +17,7 @@ from colorama import just_fix_windows_console
 from termcolor import colored, cprint
 
 # versioning
-VERSION = 'v1.2.0'
+VERSION = 'v1.3.0'
 
 # command parameters
 DEFAULT_CODE = 'Python'      # default language for code generation
@@ -139,26 +139,25 @@ COMMANDS = [
         ]
     },
     {
-        'flags': ['-i', '--image'],
-        'description': 'generate an image (very expensive)',
-        'model_args': {
+        'flags': ['-e', '--explain'],
+        'description': 'explain a code snippet',
+        'model_args' : {
             'model': MINI_LLM,
-            'tools': [{
-                'type': 'image_generation',
-                'size': '1024x1024',
-                'quality': 'auto' # low, medium, high
-            }],
         },
         'messages': [
+            { 
+                'role': 'developer', 
+                'content': 'You are a code explanation assistant. Given a code snippet, provide a clear and concise explanation on what it does and how it works. Assume the reader is an experienced programmer. Respond in as few sentences as possible, focusing on the key aspects of the code.',
+            },
             {
                 'role': 'user',
-                'content': 'Generate an image of the following: {text}.'
+                'content': 'Explain the following code snippet: {text}'
             }
         ]
     },
     {
         'flags': ['-w', '--web'],
-        'description': 'search the internet (more expensive)',
+        'description': 'search the internet (expensive)',
         'model_args' : {
             'model': MINI_LLM,
             'tools': [{
@@ -178,19 +177,20 @@ COMMANDS = [
         ]
     },
     {
-        'flags': ['-r', '--rephrase'],
-        'description': 'rephrase text for enhanced fluency',
-        'model_args' : {
-            'model': FULL_LLM,
+        'flags': ['-i', '--image'],
+        'description': 'generate an image (very expensive)',
+        'model_args': {
+            'model': MINI_LLM,
+            'tools': [{
+                'type': 'image_generation',
+                'size': '1024x1024',
+                'quality': 'auto' # low, medium, high
+            }],
         },
         'messages': [
-            { 
-                'role': 'developer', 
-                'content': 'You are writing assistant. Given a text passage, rephrase it to enhance clarity, fluency, and conciseness. Ensure the output is gramatically correct, coherent, and precise. Remove redundant phrases without losing essential details. Do not modify the factual content, level of detail, or tone unless requested.',
-            },
             {
                 'role': 'user',
-                'content': 'Rephrase the following text: {text}'
+                'content': 'Generate an image of the following: {text}.'
             }
         ]
     }

@@ -109,13 +109,13 @@ $ q -x html tags
 <[^>]+>
 ```
 
-### Generate Images
+### Explain Code
 
-Use the `-i` or `--image` command to generate 1024x1024 images (note: this is very expensive):
+Use the `-e` or `--explain` command to explain a code snippet:
 
 ```
-$ q -i george washington riding a harley through the american civil war
-Image saved to q_george_washington_riding_a_harley_through_the_american_civil_war.png.
+$ q -e printf %b
+The `printf %b` command in shell scripting (e.g., bash) prints the given string with backslash escapes interpreted.
 ```
 
 ### Search the Web
@@ -127,13 +127,13 @@ $ q -w steph curry age
 Stephen Curry is 37 years old.
 ```
 
-### Rephrase Text
+### Generate Images
 
-Use the `-r` or `--rephrase` command to rephrase text for enhanced fluency:
+Use the `-i` or `--image` command to generate 1024x1024 images (note: this is very expensive):
 
 ```
-$ q -r watchin haters wonder why gambino got the game locked
-Watching critics wonder why Gambino dominates the game.
+$ q -i george washington riding a harley through the american civil war
+Image saved to q_george_washington_riding_a_harley_through_the_american_civil_war.png.
 ```
 
 ### General Prompting
