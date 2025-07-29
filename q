@@ -124,21 +124,6 @@ COMMANDS = [
         ]
     },
     {
-        'flags': ['-x', '--regex'],
-        'description': 'generate a regex pattern',
-        'clip_output': True,
-        'messages': [
-            { 
-                'role': 'developer', 
-                'content': 'You are a regular expression generator. Given a natural language description of the desired text pattern, generate a regex pattern to match it. The regex should be correct, efficient, and concise. Respond with only the raw regex string, without explanations, additional text, or formatting.'
-            },
-            {
-                'role': 'user',
-                'content': 'Generate a regex to match the following: {text}. Respond with only the regex pattern, without explanation or additional text.'
-            }
-        ]
-    },
-    {
         'flags': ['-e', '--explain'],
         'description': 'explain a code snippet',
         'model_args' : {

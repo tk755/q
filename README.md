@@ -100,15 +100,6 @@ $ q -s count line numbers in fib.py | bash
 12 fib.py
 ```
 
-### Generate Regex Patterns
-
-Use the `-x` or `--regex` command to generate regex patterns:
-
-```
-$ q -x html tags
-<[^>]+>
-```
-
 ### Explain Code
 
 Use the `-e` or `--explain` command to explain a code snippet:
