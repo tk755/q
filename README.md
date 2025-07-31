@@ -90,22 +90,36 @@ $ q -s count line numbers in fib.py | bash
 12 fib.py
 ```
 
-### Explain Code
+### Generate Explanations
 
-Use the `-e` or `--explain` command to explain a code snippet:
+Use the `-e` or `--explain` command to generate a concise explanation for a shell command or code snippet:
 
 ```
-$ q -e printf %b
-The `printf %b` command in shell scripting (e.g., bash) prints the given string with backslash escapes interpreted.
+$ q -e 'print(os.getcwd())'
+`print(os.getcwd())` outputs the current working directory of the Python process by calling `os.getcwd()`, which returns the absolute path as a string, and then prints it to the standard output.
+```
+
+This is particularly useful for understanding complex commands or code you may not be familiar with:
+
+```
+$ q -e 'find . -type d -name .git -exec dirname {} \; | sort'
+This command searches recursively from the current directory for directories named `.git`, then uses `dirname` to output their parent directory paths, effectively listing all Git repository root directories. The results are then sorted alphabetically.
+```
+
+You can also generate explanations about technical concepts:
+
+```
+$ q -e neuroevolution
+Neuroevolution is a technique that applies evolutionary algorithms to optimize artificial neural networks, typically evolving their weights, architectures, or learning rules. Instead of using gradient-based methods like backpropagation, neuroevolution treats network parameters as genomes and iteratively improves them through selection, mutation, and crossover, enabling the discovery of novel network topologies and solutions, especially useful in reinforcement learning and problems with non-differentiable objectives.
 ```
 
 ### Search the Web
 
-Use the `-w` or `--web` command to search the web for up-to-date information (note: this is slightly more expensive):
+Use the `-w` or `--web` command to search the web for up-to-date information (note: this is slightly expensive):
 
 ```
-$ q -w steph curry age
-Stephen Curry is 37 years old.
+$ q -w highest qbit computer
+As of July 2025, the quantum computer with the highest number of qubits is Atom Computing's processor, which has 1,180 qubits. (spinquanta.com)
 ```
 
 ### Generate Images
@@ -117,14 +131,16 @@ $ q -i george washington riding a harley through the american civil war
 Image saved to q_george_washington_riding_a_harley_through_the_american_civil_war.png.
 ```
 
-### General Prompting
+### Direct Prompting
 
-Use the `-p` or `--prompt` command to prompt a regular language model about anything:
+Use the `-p` or `--prompt` command to prompt a model directly without additional instructions:
 
 ```
 $ q -p give me a punchline without the setup
 "…and that's why you never trust a penguin with your ice cream!"
 ```
+
+This is useful for taking input from another program that generates prompts, or purely for observing the model's default behavior. But usually `-e` is more useful for most user tasks.
 
 ## Multi-Turn Commands
 

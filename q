@@ -17,7 +17,7 @@ from colorama import just_fix_windows_console
 from termcolor import colored, cprint
 
 # versioning
-VERSION = 'v1.3.0'
+VERSION = 'v1.3'
 
 # command parameters
 DEFAULT_CODE = 'Python'      # default language for code generation
@@ -74,16 +74,12 @@ COMMANDS = [
     },
     {
         'flags': ['-p', '--prompt'],
-        'description': 'prompt a regular language model',
+        'description': 'prompt a model directly',
         'model_args': {
             'model': FULL_LLM,
             'temperature': 0.25,
         },
         'messages': [
-            { 
-                'role': 'developer', 
-                'content': 'You are a helpful and knowledgeable AI assistant.'
-            },
             {
                 'role': 'user',
                 'content': '{text}'
@@ -125,18 +121,18 @@ COMMANDS = [
     },
     {
         'flags': ['-e', '--explain'],
-        'description': 'explain a code snippet',
+        'description': 'explain a code snippet or technical concept',
         'model_args' : {
             'model': MINI_LLM,
         },
         'messages': [
             { 
                 'role': 'developer', 
-                'content': 'You are a code explanation assistant. Given a code snippet, provide a clear and concise explanation on what it does and how it works. Assume the reader is an experienced programmer. Respond in as few sentences as possible, focusing on the key aspects of the code.',
+                'content': 'You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity.',
             },
             {
                 'role': 'user',
-                'content': 'Explain the following code snippet: {text}'
+                'content': 'Explain: {text}'
             }
         ]
     },
