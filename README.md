@@ -1,5 +1,7 @@
 # Overview
-`q` is an LLM-powered copilot for the command line, designed to keep programers in the terminal and reduce time spent looking things up. It can generate shell commands, write Python scripts, construct regex patterns, and more, all from the comfort of your command line.
+`q` is an LLM-powered programming copilot from the comfort of your command line. It can generate code snippets, shell commands, technical explanations, web searches, and even images. Through multi-turn conversations, it can build, debug, and refine complex solutions iteratively. It even saves generated code and commands to your clipboard, so you can paste it wherever you need it.
+
+Currently `q` uses the OpenAI API, but support for other LLM providers is planned in the future.
 
 # Installation
 
@@ -21,13 +23,13 @@ The first time `q` is prompted, you will be asked for an OpenAI API key which yo
 
 The basic syntax is `q [command] TEXT [options]`. `q` accepts at most one command and any number of options. Any arguments between the command and options is treated as the input text.
 
-`q` stores the output of generation commands to the clipboard so you can paste it wherever you need it. This only works on non-headless environments (no VMs and Docker containers); check [here](https://pyperclip.readthedocs.io/en/latest/index.html#not-implemented-error) if it doesn't work.
+`q` saves generated code snippets and shell commands to your clipboard so you can paste it wherever you need it. This only works on non-headless environments (no VMs and Docker containers); check [here](https://pyperclip.readthedocs.io/en/latest/index.html#not-implemented-error) if it doesn't work.
 
 For a full list of commands and options, run `q -h`.
 
 ## Commands
 
-Each command runs a tailored LLM prompt using the OpenAI API and returns the response.
+Each command runs a tailored LLM prompt using the OpenAI API and returns the parsed response.
 
 ### Generate Code
 
@@ -73,7 +75,7 @@ Use the `-s` or `--shell` command to generate shell commands:
 
 ```
 $ q -s add README.md to prev commit and push changes
-git add README.md && git commit --amend --no-edit && git push --force
+git add README.md && git commit --amend --no-edit && git push --force-with-lease
 ```
 
 By default this generates Bash commands for a Linux system, but you can specify a different shell or OS in the prompt itself (or [modify the default value](#modifying-default-values)):
@@ -90,23 +92,23 @@ $ q -s count line numbers in fib.py | bash
 12 fib.py
 ```
 
-### Generate Explanations
+### Explain
 
-Use the `-e` or `--explain` command to generate a concise explanation for a shell command or code snippet:
+Use the `-e` or `--explain` command to generate a concise explanation for code or shell commands:
 
 ```
 $ q -e 'print(os.getcwd())'
 `print(os.getcwd())` outputs the current working directory of the Python process by calling `os.getcwd()`, which returns the absolute path as a string, and then prints it to the standard output.
 ```
 
-This is particularly useful for understanding complex commands or code you may not be familiar with:
+This is particularly useful for understanding complex code or shell commands you may not be familiar with:
 
 ```
 $ q -e 'find . -type d -name .git -exec dirname {} \; | sort'
 This command searches recursively from the current directory for directories named `.git`, then uses `dirname` to output their parent directory paths, effectively listing all Git repository root directories. The results are then sorted alphabetically.
 ```
 
-You can also generate explanations about technical concepts:
+It can even generate explanations about technical concepts:
 
 ```
 $ q -e neuroevolution
@@ -131,29 +133,18 @@ $ q -i george washington riding a harley through the american civil war
 Image saved to q_george_washington_riding_a_harley_through_the_american_civil_war.png.
 ```
 
-### Direct Prompting
+## Multi-Turn Conversations
 
-Use the `-p` or `--prompt` command to prompt a model directly without additional instructions:
-
-```
-$ q -p give me a punchline without the setup
-"…and that's why you never trust a penguin with your ice cream!"
-```
-
-This is useful for taking input from another program that generates prompts, or purely for observing the model's default behavior. But usually `-e` is more useful for most user tasks.
-
-## Multi-Turn Commands
-
-Use `q` without specifying a command to build on previous responses and run contextualized multi-turn commands:
+Use `q` without specifying a command to build on the previous response conversationally:
 
 ```
 $ q -w nba champions
 The Oklahoma City Thunder won the 2025 NBA Finals, defeating the Indiana Pacers 4-3. (nba.com)
-$ q champion odds
-As of July 4, 2025, the Oklahoma City Thunder are favored to win the 2025-26 NBA Championship, with odds of +210. Other top contenders include the Cleveland Cavaliers at +750, New York Knicks at +1600, and Houston Rockets at +850. (findbet.com, espn.com)
+$ q final game score
+The Oklahoma City Thunder defeated the Indiana Pacers 103-91 in Game 7 of the 2025 NBA Finals on June 22, 2025. (espn.com)
 ```
 
-This enables many useful follow-up interactions, such as interactively refining generated code:
+This is very useful for iteratively refining generated code or shell commands:
 
 ```
 $ q -s get cuda version
@@ -170,16 +161,7 @@ $ nvidia-smi | grep "CUDA Version"
 | NVIDIA-SMI 560.35.02    Driver Version: 560.94    CUDA Version: 12.6 |
 ```
 
-You can even refine generated images:
-
-```
-$ q -i low poly rubber duck
-Image saved to q_low_poly_rubber_duck.png.
-$ q make it float in a high res bathtub
-Image saved to q_make_it_float_in_a_high_res_bathtub.png.
-```
-
-Or ask questions about the previous response:
+And ask follow-up questions about the previous response:
 
 ```
 $ q -c function to merge two dictionaries x and y
@@ -189,12 +171,20 @@ $ q what is the time complexity
 The time complexity of merging two dictionaries using `{**x, **y}` is O(n + m), where n is the number of elements in dictionary `x` and m is the number of elements in dictionary `y`.
 ```
 
+You can even refine generated images:
+
+```
+$ q -i low poly rubber duck
+Image saved to q_low_poly_rubber_duck.png.
+$ q make it float in a high res bathtub
+Image saved to q_make_it_float_in_a_high_res_bathtub.png.
+```
+
 ## Options
 
 Options are boolean flags that modify the behavior of `q`:
 
 - Use the `-o` or `--overwrite` option to overwrite the previous command.
-- Use the `-l` or `--longer` option to increase the max token length of responses (*note: this may increase the cost of API calls*).
 - Use the `-n` or `--no-clip` option to disable automatically storing responses to the clipboard.
 - Use the `-v` or `--verbose` option to print the model parameters and message history.
 
@@ -235,7 +225,6 @@ The following constants can be modified in the script to change the default beha
 - `DEFAULT_MODEL_ARGS`: the default model arguments used by all commands if not overrided.
 - `DEFAULT_CODE`: the default language for code generation used by the `-c` command.
 - `DEFAULT_SHELL`: the default system for shell command generation used by the `-s` command.
-- `LONG_TOKEN_LIMIT`: the max token length for long responses used by the `-l` option.
 
 ## Adding New Commands
 

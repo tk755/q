@@ -20,21 +20,17 @@ from termcolor import colored, cprint
 VERSION = 'v1.3'
 
 # command parameters
-DEFAULT_CODE = 'Python'      # default language for code generation
-DEFAULT_SHELL = 'Linux Bash' # default system for shell command generation
+DEFAULT_CODE = 'python'         # default language for code generation
+DEFAULT_SHELL = 'debian+bash'   # default system for shell command generation
 
 # model variants
-MINI_LLM = 'gpt-4.1-mini'    # cheap and fast
-FULL_LLM = 'gpt-4.1'         # expensive and more powerful
-
-# model token limits
-TOKEN_LIMIT = 512            # default token limit
-LONG_TOKEN_LIMIT = 2048      # token limit for long response generation
+MINI_LLM = 'gpt-4.1-mini'       # cheap and fast
+FULL_LLM = 'gpt-4.1'            # expensive and more powerful
 
 # model parameters
 DEFAULT_MODEL_ARGS = {
     'model': MINI_LLM,
-    'max_output_tokens': TOKEN_LIMIT,
+    'max_output_tokens': 1024,
     'temperature': 0.0
 }
 
@@ -73,22 +69,25 @@ COMMANDS = [
         ]
     },
     {
-        'flags': ['-p', '--prompt'],
-        'description': 'prompt a model directly',
-        'model_args': {
-            'model': FULL_LLM,
-            'temperature': 0.25,
+        'flags': ['-e', '--explain'],
+        'description': 'explain code, commands, or a technical concept',
+        'model_args' : {
+            'model': MINI_LLM,
         },
         'messages': [
+            { 
+                'role': 'developer', 
+                'content': 'You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity.',
+            },
             {
                 'role': 'user',
-                'content': '{text}'
+                'content': 'Explain: {text}'
             }
         ]
     },
     {
         'flags': ['-c', '--code'],
-        'description': f'generate a code snippet (default {DEFAULT_CODE})',
+        'description': f'generate a code snippet (default: {DEFAULT_CODE})',
         'clip_output': True,
         'model_args': {
             'model': FULL_LLM,
@@ -106,7 +105,7 @@ COMMANDS = [
     },
     {
         'flags': ['-s', '--shell'],
-        'description': f'generate a shell command (default {DEFAULT_SHELL})',
+        'description': f'generate a shell command (default: {DEFAULT_SHELL})',
         'clip_output': True,
         'messages': [
             { 
@@ -120,19 +119,20 @@ COMMANDS = [
         ]
     },
     {
-        'flags': ['-e', '--explain'],
-        'description': 'explain a code snippet or technical concept',
-        'model_args' : {
+        'flags': ['-i', '--image'],
+        'description': 'generate an image (very expensive)',
+        'model_args': {
             'model': MINI_LLM,
+            'tools': [{
+                'type': 'image_generation',
+                'size': '1024x1024',
+                'quality': 'auto' # low, medium, high
+            }],
         },
         'messages': [
-            { 
-                'role': 'developer', 
-                'content': 'You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity.',
-            },
             {
                 'role': 'user',
-                'content': 'Explain: {text}'
+                'content': 'Generate an image of the following: {text}.'
             }
         ]
     },
@@ -157,24 +157,6 @@ COMMANDS = [
             }
         ]
     },
-    {
-        'flags': ['-i', '--image'],
-        'description': 'generate an image (very expensive)',
-        'model_args': {
-            'model': MINI_LLM,
-            'tools': [{
-                'type': 'image_generation',
-                'size': '1024x1024',
-                'quality': 'auto' # low, medium, high
-            }],
-        },
-        'messages': [
-            {
-                'role': 'user',
-                'content': 'Generate an image of the following: {text}.'
-            }
-        ]
-    }
 ]
 
 OPTIONS = [
@@ -182,11 +164,6 @@ OPTIONS = [
         'name': 'overwrite',
         'flags': ['-o', '--overwrite'],
         'description': 'overwrite the previous command',
-    },
-    {
-        'name': 'longer',
-        'flags': ['-l', '--longer'],
-        'description': 'enable longer responses',
     },
     {
         'name': 'no-clip',
@@ -263,10 +240,6 @@ def run_command(cmd: Dict, text: str, **opt_args):
             cprint(f'Error: No previous command to overwrite.', 'red', file=sys.stderr)
             sys.exit(1)
 
-    # set max tokens for long responses
-    if opt_args.get('longer', False):
-        model_args['max_output_tokens'] = LONG_TOKEN_LIMIT
-
     # prompt the model
     text_response, image_response = prompt_model(model_args, messages)
 
@@ -335,7 +308,7 @@ def main(args):
 
     # help text
     tab_spaces, flag_len = 4, max(len(', '.join(cmd['flags'])) for cmd in COMMANDS + OPTIONS) + 2
-    help_text = f'q {VERSION} - an LLM-powered programming copilot from the comfort of your command line.'
+    help_text = f'q {VERSION} - an LLM-powered programming copilot from the comfort of your command line'
     help_text += '\n\nUsage: ' + colored(f'{os.path.basename(args[0])} [command] TEXT [options]', 'green')
     help_text += '\n\nCommands (one required):\n'
     help_text += '\n'.join([' '*tab_spaces + colored(f'{", ".join(cmd["flags"]) if cmd["flags"] else "TEXT":<{flag_len}}', 'green') + f'{cmd["description"]}' for cmd in COMMANDS])
