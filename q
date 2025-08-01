@@ -196,20 +196,35 @@ def get_client() -> openai.OpenAI:
             api_key = getpass.getpass(prompt='')
             _save_resource('openai_key', api_key)
 
+def process_text_response(text_response: str) -> str:
+    # remove markdown formatting from code responses
+    text_response = re.sub(r'^```.*?\n(.*)\n```$', r'\1', text_response, flags=re.DOTALL)
+
+    # shorten links from web search responses
+    text_response = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text_response).strip()
+
+    # convert bash code blocks into colored text with $ prefix
+    text_response = re.sub(r'```bash\n?(.*?)```', lambda m: colored('\n'.join('$ ' + line for line in m.group(1).strip().split('\n')), 'cyan'), text_response, flags=re.DOTALL)
+    
+    # convert non-bash code blocks into colored text
+    text_response = re.sub(r'```(?:\w+\n?)?(.*?)```', lambda m: colored(m.group(1).strip(), 'cyan'), text_response, flags=re.DOTALL)
+    
+    # convert inline-code into colored text
+    text_response = re.sub(r'`([^`]+)`', lambda m: colored(m.group(1), 'cyan'), text_response)
+
+    # convert two-plus newlines into only two
+    text_response = re.sub(r'\n{2,}', '\n\n', text_response)
+
+    return text_response
+
 def prompt_model(model_args: Dict, messages: List[Dict]) -> Tuple[str, str]:
     response = get_client().responses.create(
         input=messages,
         **model_args
     )
 
-    # extract text response
-    text_response = response.output_text
-
-    # remove markdown formatting from code responses
-    text_response = re.sub(r'^\s*```(?:\w*\n)?(.*?)```(?:\s*)$', r'\1', text_response, flags=re.DOTALL)
-
-    # shorten links from web search responses
-    text_response = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text_response).strip()
+    # extract and process text response
+    text_response = process_text_response(response.output_text)
 
     # extract image response
     image_response = None
