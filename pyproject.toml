@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "q-bot"
+dynamic = ["version"]
+description = "An LLM-powered programming copilot from the comfort of your command line"
+requires-python = ">=3.8"
+dependencies = [
+    "colorama==0.4.6",
+    "openai==1.82.0",
+    "pyperclip==1.9.0",
+    "termcolor==2.5.0",
+]
+authors = [
+    {name = "Tushar Khan", email = "tushar.54k@gmail.com"}
+]
+readme = "README.md"
+license = "MIT"
+
+[project.scripts]
+q = "q:main"
+
+[project.urls]
+Repository = "https://github.com/tk755/q"
+
+[tool.setuptools.dynamic]
+version = {attr = "q.__version__"}
+
+

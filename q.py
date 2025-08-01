@@ -16,8 +16,9 @@ import pyperclip
 from colorama import just_fix_windows_console
 from termcolor import colored, cprint
 
-# versioning
-VERSION = 'v1.3'
+# module metadata
+__version__ = '1.4.0'
+DESCRIPTION = 'An LLM-powered programming copilot from the comfort of your command line'
 
 # command parameters
 DEFAULT_CODE = 'python'         # default language for code generation
@@ -314,25 +315,30 @@ def validate_commands():
         cprint(f'Error: Duplicate commands found: {", ".join(dup_flags)}.', 'red', file=sys.stderr)
         sys.exit(1)
 
-def main(args):
+def print_help():
+    tab_spaces, flag_len = 4, max(len(', '.join(cmd['flags'])) for cmd in COMMANDS + OPTIONS) + 2
+    help_text = f'q {__version__} - {DESCRIPTION}'
+    help_text += '\n\nUsage: ' + colored('q [command] TEXT [options]', 'green')
+    help_text += '\n\nCommands (one required):\n'
+    help_text += '\n'.join([' '*tab_spaces + colored(f'{", ".join(cmd["flags"]) if cmd["flags"] else "TEXT":<{flag_len}}', 'green') + f'{cmd["description"]}' for cmd in COMMANDS])
+    help_text += '\n\nOptions:\n'
+    help_text += '\n'.join([' '*tab_spaces + colored(f'{", ".join(opt["flags"]):<{flag_len}}', 'green') + f'{opt["description"]}' for opt in OPTIONS])
+
+    print(help_text)
+
+def main():
     # fix ANSI escape codes on Windows
     just_fix_windows_console()
 
     # validate custom commands
     validate_commands()
 
-    # help text
-    tab_spaces, flag_len = 4, max(len(', '.join(cmd['flags'])) for cmd in COMMANDS + OPTIONS) + 2
-    help_text = f'q {VERSION} - an LLM-powered programming copilot from the comfort of your command line'
-    help_text += '\n\nUsage: ' + colored(f'{os.path.basename(args[0])} [command] TEXT [options]', 'green')
-    help_text += '\n\nCommands (one required):\n'
-    help_text += '\n'.join([' '*tab_spaces + colored(f'{", ".join(cmd["flags"]) if cmd["flags"] else "TEXT":<{flag_len}}', 'green') + f'{cmd["description"]}' for cmd in COMMANDS])
-    help_text += '\n\nOptions:\n'
-    help_text += '\n'.join([' '*tab_spaces + colored(f'{", ".join(opt["flags"]):<{flag_len}}', 'green') + f'{opt["description"]}' for opt in OPTIONS])
+    # get command line arguments
+    args = sys.argv
 
     # print help text if no arguments or -h/--help flag is provided
     if len(args) == 1 or args[1] in ['-h', '--help']:
-        print(help_text)
+        print_help()
         sys.exit(0)
 
     # check if there is more than one command
@@ -394,4 +400,4 @@ def main(args):
         run_command(cmd, ' '.join(args[1:]), **opt_args)
 
 if __name__ == '__main__':
-    main(sys.argv)
+    main()
