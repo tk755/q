@@ -1,11 +1,11 @@
 import asyncio
-from .client import BaseClient, Messages
+from .client import TextClient, Messages
 
 
 class ChatAgent:
     """Conversational agent with persistent message history and stateful dialogue."""
     
-    def __init__(self, client: BaseClient, system_prompt: str | None = None):
+    def __init__(self, client: TextClient, system_prompt: str | None = None):
         """Initialize conversation agent with LLM client and optional system prompt."""
         self.client = client
         self.messages: Messages = []
@@ -14,7 +14,7 @@ class ChatAgent:
             self.add_system_message(system_prompt)
     
     def prompt(self, message: str, model: str, **kwargs) -> str:
-        """Process user message and return response while updating message history."""
+        """Generate response and update conversation history."""
         # Add user message to history
         self.add_user_message(message)
         
@@ -22,23 +22,7 @@ class ChatAgent:
         messages = self.get_messages()
         
         # Generate response using client
-        response = self.client.prompt(messages, model, **kwargs)
-        
-        # Add response to history
-        self.add_assistant_message(response)
-        
-        return response
-    
-    async def prompt_async(self, message: str, model: str, **kwargs) -> str:
-        """Async process user message and return response while updating message history."""
-        # Add user message to history
-        self.add_user_message(message)
-        
-        # Get current conversation history
-        messages = self.get_messages()
-        
-        # Generate response using client
-        response = await self.client.prompt_async(messages, model, **kwargs)
+        response = self.client.generate_text(messages, model, **kwargs)
         
         # Add response to history
         self.add_assistant_message(response)
@@ -93,7 +77,7 @@ class ChatAgent:
 class BatchAgent:
     """Agent for processing multiple messages concurrently."""
     
-    def __init__(self, client: BaseClient, system_prompt: str | None = None):
+    def __init__(self, client: TextClient, system_prompt: str | None = None):
         """Initialize batch agent with LLM client and optional system prompt."""
         self.client = client
         self.system_prompt = system_prompt
@@ -109,7 +93,7 @@ class BatchAgent:
                 if self.system_prompt:
                     messages.append({"role": "system", "content": self.system_prompt})
                 messages.append({"role": "user", "content": message})
-                return await self.client.prompt_async(messages, model, **kwargs)
+                return await self.client.generate_text_async(messages, model, **kwargs)
         
         # Process all messages concurrently
         tasks = [process_message(message) for message in messages]
