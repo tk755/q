@@ -85,7 +85,7 @@ $ q -s add README.md to prev commit and push changes
 git add README.md && git commit --amend --no-edit && git push --force-with-lease
 ```
 
-By default this generates Bash commands for a Debian system, but you can specify a different shell or OS in the prompt itself:
+By default this detects the current shell and operating system, but you can specify a different shell or OS in the prompt itself:
 
 ```
 $ q -s auto hide the dock on macos

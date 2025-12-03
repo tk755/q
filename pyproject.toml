@@ -9,6 +9,7 @@ description = "An LLM-powered programming copilot from the comfort of your comma
 requires-python = ">=3.8"
 dependencies = [
     "colorama==0.4.6",
+    "distro==1.9.0",
     "openai==1.82.0",
     "pyperclip==1.9.0",
     "termcolor==2.5.0",

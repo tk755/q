@@ -5,24 +5,25 @@ import base64
 import getpass
 import json
 import os
+import platform
 import re
 import string
 import sys
 from typing import Any, Dict, List, Tuple
 
 # third-party imports
+import distro
 import openai
 import pyperclip
 from colorama import just_fix_windows_console
 from termcolor import colored, cprint
 
 # module metadata
-__version__ = '1.4.0'
+__version__ = '1.4.1'
 DESCRIPTION = 'An LLM-powered programming copilot from the comfort of your command line'
 
 # command parameters
 DEFAULT_CODE = 'python'         # default language for code generation
-DEFAULT_SHELL = 'debian+bash'   # default system for shell command generation
 
 # model variants
 MINI_LLM = 'gpt-4.1-mini'       # cheap and fast
@@ -55,6 +56,18 @@ def _save_resource(name: str, value: Any):
     resources[name] = value
     with open(RESOURCE_PATH, 'w') as f:
         json.dump(resources, f, indent=4)
+
+def _get_system_info() -> str:
+    shell = os.environ.get('SHELL') or os.environ.get('COMSPEC')
+    shell = os.path.basename(shell) if shell else ''
+
+    system = platform.system()
+    if system == 'Linux':
+        system = distro.name(pretty=True)
+
+    if shell:
+        return f'{shell} on {system}'
+    return system
 
 COMMANDS = [
     {
@@ -106,12 +119,12 @@ COMMANDS = [
     },
     {
         'flags': ['-s', '--shell'],
-        'description': f'generate a shell command (default: {DEFAULT_SHELL})',
+        'description': f'generate a shell command ({_get_system_info()})',
         'clip_output': True,
         'messages': [
             { 
                 'role': 'developer', 
-                'content': f'You are a command-line assistant. Given a natural language task description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. Assume a {DEFAULT_SHELL} shell unless otherwise specified.'
+                'content': f'You are a command-line assistant. Given a natural language task description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. System is running {_get_system_info()}.'
             },
             {
                 'role': 'user',
