@@ -2,7 +2,7 @@ from typing import Any
 from ..client import *
 
 
-class AnthropicClient(TextClient, ImageClient, ToolClient):
+class AnthropicClient(TextClient):
     """Anthropic API client."""
 
     # Anthropic-specific constants
@@ -37,32 +37,29 @@ class AnthropicClient(TextClient, ImageClient, ToolClient):
         return self._anthropic.AsyncAnthropic(api_key=self.api_key)
 
     def _should_retry(self, error: Exception) -> bool:
-        # Rate limit errors
-        if isinstance(error, self._anthropic.RateLimitError):
+        # Retryable errors: rate limits, connection issues, server errors
+        if isinstance(error, (
+            self._anthropic.RateLimitError,
+            self._anthropic.APIConnectionError,
+            self._anthropic.APITimeoutError,
+            self._anthropic.InternalServerError
+        )):
             return True
 
-        # API connection errors
-        if isinstance(error, (self._anthropic.APIConnectionError, self._anthropic.APITimeoutError)):
-            return True
-
-        # Internal server errors
-        if isinstance(error, self._anthropic.InternalServerError):
-            return True
-
-        # For generic APIStatusError, check status code
+        # Generic API errors with retryable status codes
         if isinstance(error, self._anthropic.APIStatusError):
-            # 429 (rate limit), 500s (server errors) are retryable
             if error.status_code == 429 or 500 <= error.status_code < 600:
                 return True
 
         return False
 
-    def _prepare_anthropic_kwargs(self, kwargs: dict) -> dict:
+    # region Text Client
+
+    def _prepare_anthropic_model_args(self, model_args: dict) -> dict:
         """Add Anthropic-specific defaults like max_tokens to request."""
-        if 'max_tokens' not in kwargs:
-            kwargs = kwargs.copy()  # Don't mutate original
-            kwargs['max_tokens'] = self.DEFAULT_MAX_TOKENS
-        return kwargs
+        if 'max_tokens' not in model_args:
+            model_args['max_tokens'] = self.DEFAULT_MAX_TOKENS
+        return model_args
 
     def _convert_messages(self, messages: Messages) -> tuple[str | None, Messages]:
         """Convert Messages type to Anthropic's system/messages format."""
@@ -80,33 +77,16 @@ class AnthropicClient(TextClient, ImageClient, ToolClient):
 
         return system_message, anthropic_messages
 
-    async def _generate_text_async(self, messages: Messages, model: str, **kwargs) -> Any:
+    async def _generate_text_async(self, messages: Messages, model: str, **model_args) -> Any:
         system_message, anthropic_messages = self._convert_messages(messages)
-        kwargs = self._prepare_anthropic_kwargs(kwargs)
+        model_args = self._prepare_anthropic_model_args(model_args)
 
         return await self._async_client.messages.create(
             messages=anthropic_messages,
             model=model,
             system=system_message,
-            **kwargs
+            **model_args
         )
 
     def _extract_text(self, response: Any) -> str:
         return response.content[0].text
-
-    # ImageClient abstract method stubs
-    async def _generate_image_async(self, messages: Messages, model: str, **kwargs) -> Any:
-        raise NotImplementedError("Image generation not yet implemented")
-
-    async def _edit_image_async(self, messages: Messages, model: str, **kwargs) -> Any:
-        raise NotImplementedError("Image editing not yet implemented")
-
-    def _extract_image(self, response: Any) -> bytes:
-        raise NotImplementedError("Image extraction not yet implemented")
-
-    # ToolClient abstract method stubs
-    async def _tool_call_async(self, messages: Messages, tools: list[dict], model: str, **kwargs) -> Any:
-        raise NotImplementedError("Tool calling not yet implemented")
-
-    def _extract_tool_call(self, response: Any) -> list[dict]:
-        raise NotImplementedError("Tool call extraction not yet implemented")

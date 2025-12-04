@@ -5,9 +5,9 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable
 
 
-# Type aliases
 Messages = list[dict[str, str]]
 
+# region Base Client
 
 class BaseClient(ABC):
     """Base client for LLM providers with authentication validation and retry logic."""
@@ -29,7 +29,7 @@ class BaseClient(ABC):
                 return func(*args, **kwargs)
             except Exception as e:
                 if attempt == self.MAX_RETRIES or not self._should_retry(e):
-                    raise e
+                    raise
 
                 time.sleep(self._calc_backoff(attempt))
 
@@ -40,7 +40,7 @@ class BaseClient(ABC):
                 return await func(*args, **kwargs)
             except Exception as e:
                 if attempt == self.MAX_RETRIES or not self._should_retry(e):
-                    raise e
+                    raise
 
                 # Async sleep with backoff
                 await asyncio.sleep(self._calc_backoff(attempt))
@@ -71,6 +71,7 @@ class BaseClient(ABC):
         """Determine which errors should trigger retry attempt."""
         pass
 
+# region Text Client
 
 class TextClient(BaseClient):
     """Base client for text generation."""
@@ -78,19 +79,19 @@ class TextClient(BaseClient):
     def __init__(self):
         super().__init__()
 
-    def generate_text(self, messages: Messages, model: str, **kwargs) -> str:
+    def generate_text(self, messages: Messages, model: str, **model_args) -> str:
         """Generate text with retry logic."""
-        return asyncio.run(self.generate_text_async(messages, model, **kwargs))
+        return asyncio.run(self.generate_text_async(messages, model, **model_args))
 
-    async def generate_text_async(self, messages: Messages, model: str, **kwargs) -> str:
+    async def generate_text_async(self, messages: Messages, model: str, **model_args) -> str:
         """Generate text asynchronously with retry logic."""
         async def _make_request():
-            response = await self._generate_text_async(messages, model, **kwargs)
+            response = await self._generate_text_async(messages, model, **model_args)
             return self._extract_text(response)
         return await self._async_retry_wrapper(_make_request)
 
     @abstractmethod
-    async def _generate_text_async(self, messages: Messages, model: str, **kwargs) -> Any:
+    async def _generate_text_async(self, messages: Messages, model: str, **model_args) -> Any:
         """Make asynchronous text generation API call and return response."""
         pass
 
@@ -99,39 +100,40 @@ class TextClient(BaseClient):
         """Extract text content from provider's API response."""
         pass
 
+# region Image Client
 
 class ImageClient(BaseClient):
     """Base client for image generation and editing."""
 
-    def generate_image(self, messages: Messages, model: str, **kwargs) -> bytes:
+    def generate_image(self, messages: Messages, model: str, **model_args) -> bytes:
         """Generate image with retry logic."""
-        return asyncio.run(self.generate_image_async(messages, model, **kwargs))
+        return asyncio.run(self.generate_image_async(messages, model, **model_args))
 
-    async def generate_image_async(self, messages: Messages, model: str, **kwargs) -> bytes:
+    async def generate_image_async(self, messages: Messages, model: str, **model_args) -> bytes:
         """Generate image asynchronously with retry logic."""
         async def _make_request():
-            response = await self._generate_image_async(messages, model, **kwargs)
+            response = await self._generate_image_async(messages, model, **model_args)
             return self._extract_image(response)
         return await self._async_retry_wrapper(_make_request)
-    
-    def edit_image(self, messages: Messages, model: str, **kwargs) -> bytes:
-        """Edit image with retry logic."""
-        return asyncio.run(self.edit_image_async(messages, model, **kwargs))
 
-    async def edit_image_async(self, messages: Messages, model: str, **kwargs) -> bytes:
+    def edit_image(self, messages: Messages, model: str, **model_args) -> bytes:
+        """Edit image with retry logic."""
+        return asyncio.run(self.edit_image_async(messages, model, **model_args))
+
+    async def edit_image_async(self, messages: Messages, model: str, **model_args) -> bytes:
         """Edit image asynchronously with retry logic."""
         async def _make_request():
-            response = await self._edit_image_async(messages, model, **kwargs)
+            response = await self._edit_image_async(messages, model, **model_args)
             return self._extract_image(response)
         return await self._async_retry_wrapper(_make_request)
 
     @abstractmethod
-    async def _generate_image_async(self, messages: Messages, model: str, **kwargs) -> Any:
+    async def _generate_image_async(self, messages: Messages, model: str, **model_args) -> Any:
         """Make asynchronous image generation API call and return response."""
         pass
 
     @abstractmethod
-    async def _edit_image_async(self, messages: Messages, model: str, **kwargs) -> Any:
+    async def _edit_image_async(self, messages: Messages, model: str, **model_args) -> Any:
         """Make asynchronous image edit API call and return response."""
         pass
 
@@ -140,51 +142,25 @@ class ImageClient(BaseClient):
         """Extract image from provider's API response."""
         pass
 
+# region Web Client
 
-class ToolClient(BaseClient):
-    """Base client for tool calling."""
+class WebClient(BaseClient):
+    """Base client for web-search."""
 
-    def tool_call(self, messages: Messages, tools: list[dict], model: str, **kwargs) -> tuple[str, list[dict]]:
-        """Generate response with tool calls using retry logic."""
-        return asyncio.run(self.tool_call_async(messages, tools, model, **kwargs))
+    def web_search(self, messages: Messages, model: str, **model_args) -> str:
+        """Perform web search with retry logic."""
+        return asyncio.run(self.web_search_async(messages, model, **model_args))
 
-    async def tool_call_async(self, messages: Messages, tools: list[dict], model: str, **kwargs) -> tuple[str, list[dict]]:
-        """Generate response with tool calls asynchronously with retry logic."""
+    async def web_search_async(self, messages: Messages, model: str, **model_args) -> str:
+        """Perform web search asynchronously with retry logic."""
         async def _make_request():
-            response = await self._tool_call_async(messages, tools, model, **kwargs)
-            text = self._extract_text(response)
-            tool_calls = self._extract_tool_call(response)
-            return text, tool_calls
-        return await self._async_retry_wrapper(_make_request)
-
-    @abstractmethod
-    async def _tool_call_async(self, messages: Messages, tools: list[dict], model: str, **kwargs) -> Any:
-        """Make asynchronous tool-calling API call and return response."""
-        pass
-
-    @abstractmethod
-    def _extract_tool_call(self, response: Any) -> list[dict]:
-        """Extract tool calls from provider's API response."""
-        pass
-
-
-class RAGClient(BaseClient):
-    """Base client for retrieval-augmented generation."""
-
-    def search(self, messages: Messages, model: str, **kwargs) -> str:
-        """Search and retrieve context with retry logic."""
-        return asyncio.run(self.search_async(messages, model, **kwargs))
-
-    async def search_async(self, messages: Messages, model: str, **kwargs) -> str:
-        """Search and retrieve context asynchronously with retry logic."""
-        async def _make_request():
-            response = await self._search_async(messages, model, **kwargs)
+            response = await self._web_search_async(messages, model, **model_args)
             return self._extract_search_results(response)
         return await self._async_retry_wrapper(_make_request)
 
     @abstractmethod
-    async def _search_async(self, messages: Messages, model: str, **kwargs) -> Any:
-        """Make asynchronous RAG-search API call and return response."""
+    async def _web_search_async(self, messages: Messages, model: str, **model_args) -> Any:
+        """Make asynchronous web-search API call and return response."""
         pass
 
     @abstractmethod

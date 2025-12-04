@@ -1,17 +1,16 @@
-from .client import Messages, TextClient, ImageClient, ToolClient, RAGClient
+from .client import Messages, TextClient, ImageClient, WebClient
 from .providers import OpenAIClient, AnthropicClient
 from .agent import ChatAgent, BatchAgent
 
 __all__ = [
     "Messages",
-    "TextClient",
-    "ImageClient",
-    "ToolClient",
-    "RAGClient",
-    "OpenAIClient",
-    "AnthropicClient",
     "ChatAgent",
     "BatchAgent",
+    "OpenAIClient",
+    "AnthropicClient",
+    "TextClient",
+    "ImageClient",
+    "WebClient",
 ]
 
 __version__ = "2.0.0"

@@ -1,8 +1,9 @@
+import base64
 from typing import Any
 from ..client import *
 
 
-class OpenAIClient(TextClient, ImageClient, ToolClient, RAGClient):
+class OpenAIClient(TextClient, ImageClient, WebClient):
     """OpenAI API client."""
 
     def __init__(self, api_key: str):
@@ -28,53 +29,78 @@ class OpenAIClient(TextClient, ImageClient, ToolClient, RAGClient):
         return self._openai.AsyncOpenAI(api_key=self.api_key)
 
     def _should_retry(self, error: Exception) -> bool:
-        # Rate limit errors
-        if isinstance(error, self._openai.RateLimitError):
+        # Retryable errors: rate limits, connection issues, server errors
+        if isinstance(error, (
+            self._openai.RateLimitError,
+            self._openai.APIConnectionError,
+            self._openai.APITimeoutError,
+            self._openai.InternalServerError
+        )):
             return True
 
-        # API connection errors
-        if isinstance(error, (self._openai.APIConnectionError, self._openai.APITimeoutError)):
-            return True
-
-        # Internal server errors
-        if isinstance(error, self._openai.InternalServerError):
-            return True
-
-        # For generic APIStatusError, check status code
+        # Generic API errors with retryable status codes
         if isinstance(error, self._openai.APIStatusError):
-            # 429 (rate limit), 500s (server errors) are retryable
             if error.status_code == 429 or 500 <= error.status_code < 600:
                 return True
 
         return False
+    
+    # region Text Client
 
-    async def _generate_text_async(self, messages: Messages, model: str, **kwargs) -> Any:
-        return await self._async_client.chat.completions.create(
-            messages=messages,
+    async def _generate_text_async(self, messages: Messages, model: str, **model_args) -> Any:
+        return await self._async_client.responses.create(
+            input=messages,
             model=model,
-            **kwargs
+            **model_args
         )
 
     def _extract_text(self, response: Any) -> str:
-        return response.choices[0].message.content
+        return response.output_text
+    
+    # region Image Client
 
-    async def _generate_image_async(self, messages: Messages, model: str, **kwargs) -> Any:
-        raise NotImplementedError("Image generation not yet implemented")
+    async def _generate_image_async(self, messages: Messages, model: str, **model_args) -> Any:
+        # Add image generation tool
+        if 'tools' not in model_args:
+            model_args['tools'] = [{
+                'type': 'image_generation',
+                'size': '1024x1024',
+                'quality': 'auto'  # auto, low, medium, high
+            }]
 
-    async def _edit_image_async(self, messages: Messages, model: str, **kwargs) -> Any:
+        return await self._async_client.responses.create(
+            input=messages,
+            model=model,
+            **model_args
+        )
+
+    async def _edit_image_async(self, messages: Messages, model: str, **model_args) -> Any:
         raise NotImplementedError("Image editing not yet implemented")
 
     def _extract_image(self, response: Any) -> bytes:
-        raise NotImplementedError("Image extraction not yet implemented")
+        for output in response.output:
+            if output.type == 'image_generation_call':
+                return base64.b64decode(output.result)
 
-    async def _tool_call_async(self, messages: Messages, tools: list[dict], model: str, **kwargs) -> Any:
-        raise NotImplementedError("Tool calling not yet implemented")
+        # If no image found, raise an error
+        raise ValueError("No image_generation_call found in response output")
 
-    def _extract_tool_call(self, response: Any) -> list[dict]:
-        raise NotImplementedError("Tool call extraction not yet implemented")
+    # region Web Client
 
-    async def _search_async(self, messages: Messages, model: str, **kwargs) -> Any:
-        raise NotImplementedError("RAG search not yet implemented")
+    async def _web_search_async(self, messages: Messages, model: str, **model_args) -> Any:
+        # Add web search tool
+        if 'tools' not in model_args:
+            model_args['tools'] = [{
+                'type': 'web_search_preview',
+                'search_context_size': 'low'  # low, medium, high
+            }]
+
+        return await self._async_client.responses.create(
+            input=messages,
+            model=model,
+            **model_args
+        )
 
     def _extract_search_results(self, response: Any) -> str:
-        raise NotImplementedError("Search result extraction not yet implemented")
+        return response.output_text
+    
