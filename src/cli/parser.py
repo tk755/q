@@ -2,7 +2,9 @@ import os
 import re
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any
+
+
+Value = str | int | None
 
 
 class ParseError(Exception):
@@ -22,41 +24,48 @@ class Flag:
     desc: str
     arg_type: ArgType = ArgType.NONE
     required: bool = False
-    default: Any = None
+    default: Value = None
 
 
-DEFAULT_CMD = 't'
+DEFAULT_CMD = "t"
 
 COMMANDS: list[Flag] = [
-    Flag('c', 'generate code', ArgType.TEXT, required=True),
-    Flag('e', 'explain code or text', ArgType.TEXT),
-    Flag('h', 'show help message'),
-    Flag('i', 'generate/edit image', ArgType.TEXT, required=True),
-    Flag('l', 'list or load session', ArgType.INT),
-    Flag('q', 'generate a q command', ArgType.TEXT, required=True),
-    Flag('r', 'retrieval augmented generation', ArgType.TEXT),
-    Flag('s', 'generate shell command', ArgType.TEXT),
-    Flag('t', 'pure text prompt', ArgType.TEXT, required=True),
-    Flag('u', 'run user command', ArgType.STR, required=True),
-    Flag('w', 'web search', ArgType.TEXT, required=True),
+    Flag("c", "generate code", ArgType.TEXT, required=True),
+    Flag("e", "explain code or text", ArgType.TEXT),
+    Flag("h", "show help message"),
+    Flag("i", "generate/edit image", ArgType.TEXT, required=True),
+    Flag("l", "list or load session", ArgType.INT),
+    Flag("q", "generate a q command", ArgType.TEXT, required=True),
+    Flag("r", "retrieval augmented generation", ArgType.TEXT),
+    Flag("s", "generate shell command", ArgType.TEXT),
+    Flag("t", "pure text prompt", ArgType.TEXT, required=True),
+    Flag("u", "run user command", ArgType.STR, required=True),
+    Flag("w", "web search", ArgType.TEXT, required=True),
 ]
 
 OPTIONS: list[Flag] = [
-    Flag('d', 'add directory to context', ArgType.STR, default=os.getcwd()),
-    Flag('f', 'read input from file', ArgType.STR, required=True),
-    Flag('j', 'output as JSON'),
-    Flag('m', 'override model', ArgType.STR, required=True),
-    Flag('o', 'write output to file', ArgType.STR, required=True),
-    Flag('v', 'debug logging'),
-    Flag('x', 'execute shell command'),
-    Flag('z', 'undo n exchanges', ArgType.INT, default=1),
+    Flag("d", "add directory to context", ArgType.STR, default=os.getcwd()),
+    Flag("f", "read input from file", ArgType.STR, required=True),
+    Flag("j", "output as JSON"),
+    Flag("m", "override model", ArgType.STR, required=True),
+    Flag("o", "write output to file", ArgType.STR, required=True),
+    Flag("v", "debug logging"),
+    Flag("x", "execute shell command"),
+    Flag("z", "undo n exchanges", ArgType.INT, default=1),
 ]
 
 FLAG_LOOKUP: dict[str, Flag] = {f.char: f for f in COMMANDS + OPTIONS}
 
 
-def _resolve_flags(acc_flags: list[Flag], acc_tokens: list[str]) -> dict[str, Any]:
-    """Resolve accumulated flags and tokens into values."""
+def _resolve_flags(acc_flags: list[Flag], acc_tokens: list[str]) -> dict[str, Value]:
+    """
+    Assign tokens to one flag and default values to all others.
+    
+    Token assignment disambiguation rules:
+    1. Flags with required args take priority over flags with optional args.
+    2. Flags with int args are excluded if tokens cannot cast to int.
+    3. If zero or multiple candidate flags remain, raise ParseError.
+    """
     none_flags = [f for f in acc_flags if f.arg_type == ArgType.NONE]
     arg_flags = [f for f in acc_flags if f.arg_type != ArgType.NONE]
 
@@ -67,6 +76,10 @@ def _resolve_flags(acc_flags: list[Flag], acc_tokens: list[str]) -> dict[str, An
     if acc_tokens:
         required_flags = [f for f in arg_flags if f.required]
         optional_flags = [f for f in arg_flags if not f.required]
+
+        # exclude INT flags for non-integer tokens
+        if len(acc_tokens) > 1 or not acc_tokens[0].lstrip('-').isdigit():
+            optional_flags = [f for f in optional_flags if f.arg_type != ArgType.INT]
 
         # resolve consumer flag
         if len(required_flags) == 1:
@@ -94,7 +107,7 @@ def _resolve_flags(acc_flags: list[Flag], acc_tokens: list[str]) -> dict[str, An
                     raise ParseError(f"-{consumer_flag.char} expects an integer but got: '{acc_tokens[0]}'") from None
 
     # resolve flag values
-    flags: dict[str, Any] = {}
+    flags: dict[str, Value] = {}
     for f in none_flags:
         flags[f.char] = None
     for f in arg_flags:
@@ -107,9 +120,9 @@ def _resolve_flags(acc_flags: list[Flag], acc_tokens: list[str]) -> dict[str, An
     return flags
 
 
-def parse(args: list[str]) -> tuple[str | None, dict[str, Any]]:
-    """Parse command-line arguments into (cmd, flags) tuple."""
-    flags: dict[str, Any] = {}
+def parse(args: list[str]) -> tuple[str | None, dict[str, Value]]:
+    """Parse command-line arguments into a (cmd, flags) tuple."""
+    flags: dict[str, Value] = {}
     acc_flags: list[Flag] = []
     acc_tokens: list[str] = []
     flag_parsing_enabled = True
