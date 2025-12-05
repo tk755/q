@@ -5,7 +5,6 @@ from ..client import *
 class AnthropicClient(TextClient):
     """Anthropic API client."""
 
-    # Anthropic-specific constants
     AUTH_TEST_MODEL = "claude-3-haiku-20240307"
     DEFAULT_MAX_TOKENS = 1024
 
@@ -23,8 +22,7 @@ class AnthropicClient(TextClient):
     def _validate_auth(self):
         try:
             test_client = self._anthropic.Anthropic(api_key=self.api_key)
-            # Make a minimal request to validate the key
-            # Anthropic doesn't have a models endpoint, so we'll use a minimal message
+            # minimal request to validate the key
             test_client.messages.create(
                 model=self.AUTH_TEST_MODEL,
                 max_tokens=1,
@@ -33,11 +31,8 @@ class AnthropicClient(TextClient):
         except Exception as e:
             raise ValueError(f"Anthropic API key validation failed: {e}")
 
-    def _create_async_client(self) -> Any:
-        return self._anthropic.AsyncAnthropic(api_key=self.api_key)
-
     def _should_retry(self, error: Exception) -> bool:
-        # Retryable errors: rate limits, connection issues, server errors
+        # rate limits, connection issues, server errors
         if isinstance(error, (
             self._anthropic.RateLimitError,
             self._anthropic.APIConnectionError,
@@ -46,47 +41,45 @@ class AnthropicClient(TextClient):
         )):
             return True
 
-        # Generic API errors with retryable status codes
+        # generic API errors with retryable status codes
         if isinstance(error, self._anthropic.APIStatusError):
             if error.status_code == 429 or 500 <= error.status_code < 600:
                 return True
 
         return False
 
-    # region Text Client
+    def _create_async_client(self) -> Any:
+        return self._anthropic.AsyncAnthropic(api_key=self.api_key)
 
-    def _prepare_anthropic_model_args(self, model_args: dict) -> dict:
-        """Add Anthropic-specific defaults like max_tokens to request."""
+    def _convert_model_args(self, model_args: dict) -> dict:
+        """Convert generic model args to include required Anthropic fields."""
         if 'max_tokens' not in model_args:
             model_args['max_tokens'] = self.DEFAULT_MAX_TOKENS
         return model_args
 
     def _convert_messages(self, messages: Messages) -> tuple[str | None, Messages]:
-        """Convert Messages type to Anthropic's system/messages format."""
-        system_message = None
+        """Convert generic messages to Anthropic format."""
+        system_prompt = None
         anthropic_messages = []
 
         for msg in messages:
             if msg['role'] == 'system':
-                system_message = msg['content']
+                system_prompt = msg['content']
             else:
                 anthropic_messages.append({
                     'role': msg['role'],
                     'content': msg['content']
                 })
 
-        return system_message, anthropic_messages
+        return system_prompt, anthropic_messages
 
-    async def _generate_text_async(self, messages: Messages, model: str, **model_args) -> Any:
-        system_message, anthropic_messages = self._convert_messages(messages)
-        model_args = self._prepare_anthropic_model_args(model_args)
+    async def _generate_text_async(self, messages: Messages, model: str, **model_args) -> str:
+        system_prompt, anthropic_messages = self._convert_messages(messages)
+        model_args = self._convert_model_args(model_args)
 
-        return await self._async_client.messages.create(
+        return (await self._async_client.messages.create(
             messages=anthropic_messages,
+            system=system_prompt,
             model=model,
-            system=system_message,
             **model_args
-        )
-
-    def _extract_text(self, response: Any) -> str:
-        return response.content[0].text
+        )).content[0].text
