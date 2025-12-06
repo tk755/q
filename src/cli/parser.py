@@ -30,28 +30,31 @@ class Flag:
 DEFAULT_CMD = "t"
 
 COMMANDS: list[Flag] = [
-    Flag("c", "generate code", ArgType.TEXT, required=True),
-    Flag("e", "explain code or text", ArgType.TEXT),
-    Flag("h", "show help message"),
-    Flag("i", "generate/edit image", ArgType.TEXT, required=True),
-    Flag("l", "list or load session", ArgType.INT),
-    Flag("q", "generate a q command", ArgType.TEXT, required=True),
-    Flag("r", "retrieval augmented generation", ArgType.TEXT),
-    Flag("s", "generate shell command", ArgType.TEXT),
-    Flag("t", "pure text prompt", ArgType.TEXT, required=True),
-    Flag("u", "run user command", ArgType.STR, required=True),
-    Flag("w", "web search", ArgType.TEXT, required=True),
+    Flag("a", "agent", ArgType.STR, required=True),
+    Flag("c", "code", ArgType.TEXT, required=True),
+    Flag("e", "explain", ArgType.TEXT),
+    Flag("h", "help", ArgType.TEXT),
+    Flag("i", "image", ArgType.TEXT, required=True),
+    Flag("l", "load session", ArgType.INT),
+    Flag("r", "retrieval", ArgType.TEXT),
+    Flag("s", "shell", ArgType.TEXT),
+    Flag("t", "text", ArgType.TEXT, required=True),
+    Flag("u", "user command", ArgType.STR, required=True),
+    Flag("w", "web", ArgType.TEXT, required=True),
 ]
 
 OPTIONS: list[Flag] = [
-    Flag("d", "add directory to context", ArgType.STR, default=os.getcwd()),
-    Flag("f", "read input from file", ArgType.STR, required=True),
-    Flag("j", "output as JSON"),
-    Flag("m", "override model", ArgType.STR, required=True),
-    Flag("o", "write output to file", ArgType.STR, required=True),
-    Flag("v", "debug logging"),
-    Flag("x", "execute shell command"),
-    Flag("z", "undo n exchanges", ArgType.INT, default=1),
+    Flag("b", "batch", ArgType.TEXT, required=True),
+    Flag("d", "directory", ArgType.STR, default=os.getcwd()),
+    Flag("f", "file", ArgType.STR, required=True),
+    Flag("j", "json output"),
+    Flag("m", "model", ArgType.STR, required=True),  # e.g. openai/gpt-4o
+    Flag("n", "new session"),
+    Flag("o", "output", ArgType.STR, required=True),
+    Flag("v", "verbose"),
+    Flag("x", "execute shell"),
+    Flag("y", "yes always"),
+    Flag("z", "undo", ArgType.INT, default=1),
 ]
 
 FLAG_LOOKUP: dict[str, Flag] = {f.char: f for f in COMMANDS + OPTIONS}
