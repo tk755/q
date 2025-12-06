@@ -1,0 +1,485 @@
+import os
+import platform
+import shutil
+import sys
+from datetime import datetime
+from enum import Enum, auto
+from pathlib import Path
+
+import distro
+import humanize
+from termcolor import colored
+
+from src import __version__
+from .agent import QAgent
+from .state import State, Session, create_session, get_sessions, load_session, get_api_key
+from .utils import use_color, format_output
+from ..providers.anthropic import AnthropicClient
+from ..providers.openai import OpenAIClient
+
+
+class CommandError(Exception):
+    pass
+
+
+# region Registry
+
+DEFAULT_COMMAND = 't'
+COMMANDS: list[type['Command']] = []
+OPTIONS: list[type['Flag']] = []
+
+
+def get_flag_lookup() -> dict[str, type['Flag']]:
+    return {f.char: f for f in COMMANDS + OPTIONS}
+
+
+# region Base Classes
+
+Value = str | int | None
+ParsedArgs = dict[str, Value]
+
+
+class ValueType(Enum):
+    NONE = auto()
+    TEXT = auto()
+    STR = auto()
+    INT = auto()
+
+
+class Flag:
+    """Base class for CLI flags. Subclasses auto-register to OPTIONS."""
+    char: str
+    desc: str
+    value_type: ValueType = ValueType.NONE
+    required: bool = False
+    default: Value = None
+
+    def __init_subclass__(cls, **kwargs):
+        """Auto-register subclass to OPTIONS if it defines a char."""
+        super().__init_subclass__(**kwargs)
+        if hasattr(cls, 'char'):
+            OPTIONS.append(cls)
+
+
+class Command(Flag):
+    """Base class for CLI commands. Subclasses auto-register to COMMANDS."""
+
+    def __init_subclass__(cls, **kwargs):
+        """Move subclass from OPTIONS to COMMANDS if it defines a char."""
+        super().__init_subclass__(**kwargs)
+        if hasattr(cls, 'char'):
+            OPTIONS.remove(cls)
+            COMMANDS.append(cls)
+
+    @classmethod
+    def dispatch(cls, parsed_args: ParsedArgs, state: State) -> str:
+        """Execute command with pre/post option handling."""
+        cls.pre_execute_options(parsed_args, state)
+        result = cls.execute(parsed_args, state)
+        return cls.post_execute_options(result, parsed_args)
+
+    @classmethod
+    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+        """Core command logic. Override in subclasses."""
+        raise NotImplementedError
+
+    @classmethod
+    def pre_execute_options(cls, parsed_args: ParsedArgs, state: State):
+        """Process options that apply before execution."""
+        if 'n' in parsed_args:
+            state.session = create_session()
+            state.config.current_session_id = state.session.id
+
+        if 'v' in parsed_args:
+            print(f"[debug] provider: {state.config.provider}", file=sys.stderr)
+            print(f"[debug] model: {state.config.model}", file=sys.stderr)
+            print(f"[debug] session: {state.session.id}", file=sys.stderr)
+            print(f"[debug] messages: {len(state.session.messages)}", file=sys.stderr)
+
+    @classmethod
+    def post_execute_options(cls, result: str, parsed_args: ParsedArgs) -> str:
+        """Process options that apply after execution."""
+        if 'j' not in parsed_args:
+            result = format_output(result)
+        if 'o' in parsed_args:
+            Path(parsed_args['o']).write_text(result)
+        return result
+
+    @classmethod
+    def get_agent(cls, parsed_args: ParsedArgs, state: State, system_prompt: str = '') -> QAgent:
+        """Create a QAgent with resolved provider, model, and options."""
+        # resolve provider and model: -m flag > cls.model > config defaults
+        provider = state.config.provider
+        model = getattr(cls, 'model', None) or state.config.model
+        if 'm' in parsed_args:
+            model_spec = parsed_args['m']
+            if '/' in model_spec:
+                provider, model = model_spec.split('/', 1)
+                provider = provider.lower()
+            else:
+                model = model_spec
+
+        # create client
+        api_key = get_api_key(state, provider)
+        if provider == 'openai':
+            client = OpenAIClient(api_key)
+        elif provider == 'anthropic':
+            client = AnthropicClient(api_key)
+        else:
+            raise CommandError(f"Unknown provider: {provider}")
+
+        # create agent
+        agent = QAgent(
+            client,
+            model,
+            messages=state.session.messages,
+            system_prompt=system_prompt
+        )
+
+        # handle -z
+        if 'z' in parsed_args:
+            agent.drop_exchanges(parsed_args['z'])
+
+        return agent
+
+    @classmethod
+    def read_file(cls, parsed_args: ParsedArgs) -> str | None:
+        """Read file content from -f flag if present."""
+        if 'f' in parsed_args:
+            return Path(parsed_args['f']).read_text()
+        return None
+
+
+class PromptCommand(Command):
+    """Base for commands that prompt an LLM with a system message."""
+    system: str
+    model: str | None = None
+
+    @classmethod
+    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+        """Prompt the agent and update session messages."""
+        agent = cls.get_agent(parsed_args, state, cls.system)
+        response = agent.prompt(parsed_args[cls.char])
+        state.session.messages = agent.get_messages()
+        return response
+
+
+# region Commands
+
+class TextCommand(PromptCommand):
+    char ='t'
+    desc = 'text'
+    value_type = ValueType.TEXT
+    required = True
+    system = 'You are a helpful assistant.'
+
+
+class CodeCommand(PromptCommand):
+    char = 'c'
+    desc = 'code'
+    value_type = ValueType.TEXT
+    required = True
+
+    @classmethod
+    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+        language = state.config.language
+        system = f'You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Assume the programming language is {language} unless otherwise specified.'
+
+        text = parsed_args[cls.char]
+        file_content = cls.read_file(parsed_args)
+        if file_content:
+            text = f"{text}\n\nFile content:\n```\n{file_content}\n```"
+        prompt = f'Generate a code snippet to accomplish the following task: {text}. Respond only with the code, without explanation or additional text.'
+
+        agent = cls.get_agent(parsed_args, state, system)
+        response = agent.prompt(prompt)
+        state.session.messages = agent.get_messages()
+        return response
+
+
+class ExplainCommand(PromptCommand):
+    char = 'e'
+    desc = 'explain'
+    value_type = ValueType.TEXT
+    model = 'gpt-4.1-mini'
+    system = 'You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity.'
+
+    @classmethod
+    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+        text = parsed_args.get(cls.char) or ''
+        file_content = cls.read_file(parsed_args)
+        if file_content:
+            text = f"{file_content}\n{text}" if text else file_content
+        prompt = f'Explain: {text}'
+
+        agent = cls.get_agent(parsed_args, state, cls.system)
+        response = agent.prompt(prompt)
+        state.session.messages = agent.get_messages()
+        return response
+
+
+class ShellCommand(PromptCommand):
+    char = 's'
+    desc = 'shell'
+    value_type = ValueType.TEXT
+    required = True
+    model = 'gpt-4.1-mini'
+
+    @classmethod
+    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+        system_info = cls._get_system_info()
+        system = f'You are a command-line assistant. Given a natural language task description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. System is running {system_info}.'
+
+        text = parsed_args[cls.char]
+        prompt = f'Generate a single shell command to accomplish the following task: {text}. Respond with only the command, without explanation or additional text.'
+
+        agent = cls.get_agent(parsed_args, state, system)
+        response = agent.prompt(prompt)
+        state.session.messages = agent.get_messages()
+        return response
+
+    @classmethod
+    def _get_system_info(cls) -> str:
+        shell = os.environ.get('SHELL') or os.environ.get('COMSPEC')
+        shell = os.path.basename(shell) if shell else ''
+
+        system = platform.system()
+        if system == 'Linux':
+            try:
+                system = distro.name(pretty=True)
+            except ImportError:
+                pass
+
+        if shell:
+            return f'{shell} on {system}'
+        return system
+
+
+class WebCommand(PromptCommand):
+    char = 'w'
+    desc = 'web'
+    value_type = ValueType.TEXT
+    required = True
+    system = 'You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence.'
+
+    @classmethod
+    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+        text = parsed_args[cls.char]
+        prompt = f'Fetch the following information: {text}.'
+
+        agent = cls.get_agent(parsed_args, state, cls.system)
+        response = agent.web_prompt(prompt)
+        state.session.messages = agent.get_messages()
+        return response
+
+
+class HelpCommand(Command):
+    char ='h'
+    desc = 'help'
+    value_type = ValueType.TEXT
+    required = False
+
+    @classmethod
+    def dispatch(cls, parsed_args: ParsedArgs, state: State) -> str:
+        commands = []
+        options = []
+
+        for f in sorted(COMMANDS + OPTIONS, key=lambda f: f.char):
+            flag_str = f'-{f.char}'
+            if f.value_type == ValueType.INT:
+                flag_str += ' int '
+            elif f.value_type == ValueType.STR:
+                flag_str += ' str '
+            elif f.value_type == ValueType.TEXT:
+                flag_str += ' text'
+            if f.value_type != ValueType.NONE and not f.required:
+                flag_str += ' ?'
+
+            flag_len = 11
+            flag_fmt = colored(f"{flag_str:<{flag_len}}", "green") if use_color() else f"{flag_str:<{flag_len}}"
+            line = f'    {flag_fmt}{f.desc}'
+            if f in COMMANDS:
+                commands.append(line)
+            else:
+                options.append(line)
+
+        text = f'q {__version__} - an LLM-powered programming copilot from the comfort of your command line'
+        usage = colored('q [-flag [value]] ...', 'green') if use_color() else 'q [-flag [value]] ...'
+        text += '\n\nUsage: ' + usage + '\n'
+        text += '\n  Flags can be combined: -sx = -s -x'
+        text += '\n  Use -- to disable remaining flag parsing.'
+        text += '\n  One command is required.'
+        text += '\n\nCommands:\n' + '\n'.join(commands)
+        text += '\n\nOptions:\n' + '\n'.join(options)
+        return text
+
+
+class LoadCommand(Command):
+    char ='l'
+    desc = 'load session'
+    value_type = ValueType.INT
+
+    @classmethod
+    def dispatch(cls, parsed_args: ParsedArgs, state: State) -> str:
+        cls.pre_execute_options(parsed_args, state)
+        session_id = parsed_args.get(cls.char)
+        if session_id is None:
+            return cls.format_sessions(get_sessions())
+        session = load_session(session_id)
+        if session is None:
+            raise CommandError(f"invalid session: {session_id}")
+        state.session = session
+        state.config.current_session_id = session_id
+        return f"Loaded session {session_id}"
+
+    @classmethod
+    def format_sessions(cls, sessions: list[Session]) -> str:
+        if not sessions:
+            return "No sessions found."
+        lines = [cls.format_session(s) for s in sessions]
+        return "\n".join(lines)
+
+    @classmethod
+    def format_session(cls, session: Session) -> str:
+        age = "unknown"
+        if session.updated:
+            dt = datetime.fromisoformat(session.updated)
+            age = humanize.naturaltime(dt)
+
+        # calculate max preview length based on terminal width
+        term_width = shutil.get_terminal_size().columns
+        prefix_len = len(f"  {session.id}. ")
+        suffix_len = len(f" ({age})")
+        max_len = max(20, term_width - prefix_len - suffix_len - 3)  # 3 for "..."
+
+        preview = "(empty)"
+        for msg in session.messages:
+            if msg.get('role') == 'user':
+                content = msg.get('content', '')
+                preview = content[:max_len] + "..." if len(content) > max_len else content
+                break
+
+        if use_color():
+            return f"  {colored(f'{session.id}.', 'cyan')} {preview} {colored(f'({age})', 'dark_grey')}"
+        return f"  {session.id}: {preview} ({age})"
+
+
+class AgentCommand(Command):
+    char ='a'
+    desc = 'agent'
+    value_type = ValueType.TEXT
+    required = True
+
+    @classmethod
+    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+        raise CommandError("Command not implemented yet")
+
+
+class ImageCommand(Command):
+    char ='i'
+    desc = 'image'
+    value_type = ValueType.TEXT
+    required = True
+    model = 'gpt-image-1'
+
+    @classmethod
+    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+        agent = cls.get_agent(parsed_args, state)
+        image_bytes = agent.image_prompt(parsed_args[cls.char], cls.model)
+
+        # save image to file
+        output_path = parsed_args.get('o')
+        if not output_path:
+            output_path = 'output.png'
+        Path(output_path).write_bytes(image_bytes)
+        state.session.messages = agent.get_messages()
+        return f"Image saved to {output_path}"
+
+
+class RetrievalCommand(Command):
+    char ='r'
+    desc = 'retrieval'
+    value_type = ValueType.TEXT
+
+    @classmethod
+    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+        raise CommandError("Command not implemented yet")
+
+
+class UserCommand(Command):
+    char ='u'
+    desc = 'user command'
+    value_type = ValueType.STR
+    required = True
+
+    @classmethod
+    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+        raise CommandError("Command not implemented yet")
+
+
+# region Options
+
+class BatchOption(Flag):
+    char ='b'
+    desc = 'batch'
+    value_type = ValueType.TEXT
+    required = True
+
+
+class DirectoryOption(Flag):
+    char ='d'
+    desc = 'directory'
+    value_type = ValueType.STR
+
+
+class FileOption(Flag):
+    char ='f'
+    desc = 'file'
+    value_type = ValueType.STR
+    required = True
+
+
+class JsonOption(Flag):
+    char ='j'
+    desc = 'json output'
+
+
+class ModelOption(Flag):
+    char ='m'
+    desc = 'model'
+    value_type = ValueType.STR
+    required = True
+
+
+class NewSessionOption(Flag):
+    char ='n'
+    desc = 'new session'
+
+
+class OutputOption(Flag):
+    char ='o'
+    desc = 'output'
+    value_type = ValueType.STR
+    required = True
+
+
+class VerboseOption(Flag):
+    char ='v'
+    desc = 'verbose'
+
+
+class ExecuteOption(Flag):
+    char ='x'
+    desc = 'execute shell'
+
+
+class YesOption(Flag):
+    char ='y'
+    desc = 'yes always'
+
+
+class UndoOption(Flag):
+    char ='z'
+    desc = 'undo'
+    value_type = ValueType.INT
+    default = 1

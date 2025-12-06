@@ -1,17 +1,33 @@
 import asyncio
-from .client import *
+from .clients import *
 
 # region Chat Agent
 
 class ChatAgent:
     """Conversational agent with persistent message history and stateful dialogue."""
-    
-    def __init__(self, client: TextClient, model: str, system_prompt: str | None = None, **model_args):
-        """Initialize conversation agent with LLM client and optional system prompt."""
+
+    def __init__(
+        self,
+        client: TextClient,
+        model: str,
+        messages: Messages | None = None,
+        system_prompt: str | None = None,
+        **model_args
+    ):
+        """
+        Initialize conversation agent with LLM client.
+
+        Args:
+            client: Text generation client
+            model: Model identifier
+            messages: Initial message history (copied if provided)
+            system_prompt: System prompt (always appended if provided)
+            **model_args: Additional model parameters
+        """
         self.client = client
         self.model = model
         self.model_args = model_args
-        self.messages: Messages = []
+        self.messages: Messages = messages.copy() if messages else []
 
         if system_prompt:
             self.add_system_message(system_prompt)

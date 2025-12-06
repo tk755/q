@@ -19,7 +19,6 @@ class BaseClient(ABC):
     def __init__(self):
         """Orchestrate client initialization."""
         self._import_sdk()
-        self._validate_auth()
         self._async_client = self._create_async_client()
 
     def _retry_wrapper(self, func: Callable[..., Any], *args, **kwargs) -> Any:
@@ -54,11 +53,6 @@ class BaseClient(ABC):
         pass
 
     @abstractmethod
-    def _validate_auth(self):
-        """Validate API credentials with minimal test request."""
-        pass
-
-    @abstractmethod
     def _should_retry(self, error: Exception) -> bool:
         """Determine which errors should trigger retry attempt."""
         pass
@@ -66,6 +60,10 @@ class BaseClient(ABC):
     @abstractmethod
     def _create_async_client(self) -> Any:
         """Create provider's async client instance."""
+        pass
+
+    @abstractmethod
+    def __str__(self) -> str:
         pass
 
 # region Text Client

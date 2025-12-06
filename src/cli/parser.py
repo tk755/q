@@ -1,139 +1,88 @@
-import os
 import re
-from dataclasses import dataclass
-from enum import Enum, auto
 
-
-Value = str | int | None
+from .commands import Command, Flag, ValueType, ParsedArgs, COMMANDS, DEFAULT_COMMAND, get_flag_lookup
 
 
 class ParseError(Exception):
     pass
 
 
-class ArgType(Enum):
-    NONE = auto()  # no argument (boolean flag)
-    TEXT = auto()  # contiguous multi-token text
-    STR = auto()   # single string token
-    INT = auto()   # single integer token
-
-
-@dataclass
-class Flag:
-    char: str
-    desc: str
-    arg_type: ArgType = ArgType.NONE
-    required: bool = False
-    default: Value = None
-
-
-DEFAULT_CMD = "t"
-
-COMMANDS: list[Flag] = [
-    Flag("a", "agent", ArgType.STR, required=True),
-    Flag("c", "code", ArgType.TEXT, required=True),
-    Flag("e", "explain", ArgType.TEXT),
-    Flag("h", "help", ArgType.TEXT),
-    Flag("i", "image", ArgType.TEXT, required=True),
-    Flag("l", "load session", ArgType.INT),
-    Flag("r", "retrieval", ArgType.TEXT),
-    Flag("s", "shell", ArgType.TEXT),
-    Flag("t", "text", ArgType.TEXT, required=True),
-    Flag("u", "user command", ArgType.STR, required=True),
-    Flag("w", "web", ArgType.TEXT, required=True),
-]
-
-OPTIONS: list[Flag] = [
-    Flag("b", "batch", ArgType.TEXT, required=True),
-    Flag("d", "directory", ArgType.STR, default=os.getcwd()),
-    Flag("f", "file", ArgType.STR, required=True),
-    Flag("j", "json output"),
-    Flag("m", "model", ArgType.STR, required=True),  # e.g. openai/gpt-4o
-    Flag("n", "new session"),
-    Flag("o", "output", ArgType.STR, required=True),
-    Flag("v", "verbose"),
-    Flag("x", "execute shell"),
-    Flag("y", "yes always"),
-    Flag("z", "undo", ArgType.INT, default=1),
-]
-
-FLAG_LOOKUP: dict[str, Flag] = {f.char: f for f in COMMANDS + OPTIONS}
-
-
-def _resolve_flags(acc_flags: list[Flag], acc_tokens: list[str]) -> dict[str, Value]:
+def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str]) -> ParsedArgs:
     """
-    Assign tokens to one flag and default values to all others.
-    
-    Token assignment disambiguation rules:
-    1. Flags with required args take priority over flags with optional args.
-    2. Flags with int args are excluded if tokens cannot cast to int.
-    3. If zero or multiple candidate flags remain, raise ParseError.
-    """
-    none_flags = [f for f in acc_flags if f.arg_type == ArgType.NONE]
-    arg_flags = [f for f in acc_flags if f.arg_type != ArgType.NONE]
+    Bind tokens to one flag and default values to all others.
 
-    consumer_flag = None
+    Disambiguation rules:
+    1. Flags with required values take priority over optional ones.
+    2. Flags which bind to int values are excluded if value is not int.
+    3. If zero or multiple candidates remain, raise ParseError.
+    """
+    none_flags = [f for f in pending_flags if f.value_type == ValueType.NONE]
+    value_flags = [f for f in pending_flags if f.value_type != ValueType.NONE]
+
+    consumer = None
     value = None
-    
-    # determine which flag consumes accumulated tokens
-    if acc_tokens:
-        required_flags = [f for f in arg_flags if f.required]
-        optional_flags = [f for f in arg_flags if not f.required]
 
-        # exclude INT flags for non-integer tokens
-        if len(acc_tokens) > 1 or not acc_tokens[0].lstrip('-').isdigit():
-            optional_flags = [f for f in optional_flags if f.arg_type != ArgType.INT]
+    # determine which flag binds to pending tokens
+    if pending_tokens:
+        required = [f for f in value_flags if f.required]
+        optional = [f for f in value_flags if not f.required]
 
-        # resolve consumer flag
-        if len(required_flags) == 1:
-            consumer_flag = required_flags[0]
-        elif len(required_flags) > 1:
-            raise ParseError(f"ambiguous target for '{acc_tokens[0]}': " + ", ".join(f"-{f.char}" for f in required_flags))
-        elif len(optional_flags) == 1:
-            consumer_flag = optional_flags[0]
-        elif len(optional_flags) > 1:
-            raise ParseError(f"ambiguous target for '{acc_tokens[0]}': " + ", ".join(f"-{f.char}" for f in optional_flags))
+        # exclude INT flags for non-integer values
+        if len(pending_tokens) > 1 or not pending_tokens[0].lstrip('-').isdigit():
+            optional = [f for f in optional if f.value_type != ValueType.INT]
+
+        # resolve consumer
+        if len(required) == 1:
+            consumer = required[0]
+        elif len(required) > 1:
+            raise ParseError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in required))
+        elif len(optional) == 1:
+            consumer = optional[0]
+        elif len(optional) > 1:
+            raise ParseError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in optional))
         else:
-            raise ParseError(f"unexpected argument{'' if len(acc_tokens) == 1 else 's'}: " + ", ".join(f"'{t}'" for t in acc_tokens))
+            raise ParseError(f"unexpected token{'' if len(pending_tokens) == 1 else 's'}: " + ", ".join(f"'{t}'" for t in pending_tokens))
 
-        # extract value based on arg type
-        if consumer_flag.arg_type == ArgType.TEXT:
-            value = ' '.join(acc_tokens)
+        # extract value based on type
+        if consumer.value_type == ValueType.TEXT:
+            value = ' '.join(pending_tokens)
         else:  # STR or INT
-            if len(acc_tokens) > 1:
-                raise ParseError(f"-{consumer_flag.char} expects one argument but got: " + ", ".join(f"'{t}'" for t in acc_tokens))
-            value = acc_tokens[0]
-            if consumer_flag.arg_type == ArgType.INT:
+            if len(pending_tokens) > 1:
+                raise ParseError(f"-{consumer.char} expects one token but got: " + ", ".join(f"'{t}'" for t in pending_tokens))
+            value = pending_tokens[0]
+            if consumer.value_type == ValueType.INT:
                 try:
                     value = int(value)
                 except ValueError:
-                    raise ParseError(f"-{consumer_flag.char} expects an integer but got: '{acc_tokens[0]}'") from None
+                    raise ParseError(f"-{consumer.char} expects an integer but got: '{pending_tokens[0]}'") from None
 
     # resolve flag values
-    flags: dict[str, Value] = {}
+    parsed_args: ParsedArgs = {}
     for f in none_flags:
-        flags[f.char] = None
-    for f in arg_flags:
-        if f == consumer_flag:
-            flags[f.char] = value
+        parsed_args[f.char] = None
+    for f in value_flags:
+        if f == consumer:
+            parsed_args[f.char] = value
         elif f.required:
-            raise ParseError(f"-{f.char} expects an argument but got none")
+            raise ParseError(f"-{f.char} requires a value")
         else:
-            flags[f.char] = f.default
-    return flags
+            parsed_args[f.char] = f.default
+    return parsed_args
 
 
-def parse(args: list[str]) -> tuple[str | None, dict[str, Value]]:
-    """Parse command-line arguments into a (cmd, flags) tuple."""
-    flags: dict[str, Value] = {}
-    acc_flags: list[Flag] = []
-    acc_tokens: list[str] = []
+def parse(argv: list[str]) -> tuple[type[Command], ParsedArgs]:
+    """Parse command-line arguments into (command, parsed_args) tuple."""
+    flag_lookup = get_flag_lookup()
+
+    parsed_args: ParsedArgs = {}
+    pending_flags: list[type[Flag]] = []
+    pending_tokens: list[str] = []
     flag_parsing_enabled = True
     pos = 0
 
     while True:
-        at_end = pos >= len(args)
-        token = args[pos] if not at_end else None
+        at_end = pos >= len(argv)
+        token = argv[pos] if not at_end else None
 
         # handle -- sentinel
         if token == '--' and flag_parsing_enabled:
@@ -141,42 +90,42 @@ def parse(args: list[str]) -> tuple[str | None, dict[str, Value]]:
             pos += 1
             continue
 
-        # resolve pending flags at boundary (i.e. new flags or end)
+        # resolve at boundary (new flag or end)
         is_flag = flag_parsing_enabled and token and bool(re.match(r'^-[a-z]+$', token))
         if is_flag or at_end:
-            resolved_flags = _resolve_flags(acc_flags, acc_tokens)
-            
-            dup_flags = set(resolved_flags.keys()) & set(flags.keys())
-            if dup_flags:
-                raise ParseError(f"duplicate flag{'' if len(dup_flags) == 1 else 's'}: " + ", ".join(f"-{k}" for k in dup_flags))
-            
-            flags.update(resolved_flags)
-            acc_flags, acc_tokens = [], []
+            resolved = _resolve_pending(pending_flags, pending_tokens)
+
+            duplicates = set(resolved.keys()) & set(parsed_args.keys())
+            if duplicates:
+                raise ParseError(f"duplicate flag{'' if len(duplicates) == 1 else 's'}: " + ", ".join(f"-{k}" for k in duplicates))
+
+            parsed_args.update(resolved)
+            pending_flags, pending_tokens = [], []
 
         if at_end:
             break
 
         # accumulate flags
         if is_flag:
-            chars = token[1:]
-            for c in chars:
-                if c not in FLAG_LOOKUP:
+            for c in token[1:]:
+                if c not in flag_lookup:
                     raise ParseError(f"unknown flag: -{c}")
-                acc_flags.append(FLAG_LOOKUP[c])
+                pending_flags.append(flag_lookup[c])
             pos += 1
             continue
 
-        # accumulate token (add default command if no pending flags)
-        if not acc_flags:
-            acc_flags.append(FLAG_LOOKUP[DEFAULT_CMD])
-        acc_tokens.append(token)
+        # accumulate tokens (add default command if no pending flags)
+        if not pending_flags:
+            pending_flags.append(flag_lookup[DEFAULT_COMMAND])
+        pending_tokens.append(token)
         pos += 1
 
     # validate commands
-    all_commands = [f.char for f in COMMANDS]
-    commands = [c for c in flags if c in all_commands]
+    valid_commands = {f.char for f in COMMANDS}
+    commands = [c for c in parsed_args if c in valid_commands]
     if len(commands) > 1:
-        raise ParseError(f"multiple commands: " + ", ".join(f"-{c}" for c in commands))
-    cmd = commands[0] if commands else None
+        raise ParseError("multiple commands: " + ", ".join(f"-{c}" for c in commands))
+    if not commands:
+        raise ParseError("no command specified")
 
-    return cmd, flags
+    return flag_lookup[commands[0]], parsed_args

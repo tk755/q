@@ -10,9 +10,12 @@ requires-python = ">=3.8"
 dependencies = [
     "colorama==0.4.6",
     "distro==1.9.0",
+    "humanize==4.11.0",
     "openai==1.82.0",
     "pyperclip==1.9.0",
+    "python-dotenv==1.0.1",
     "termcolor==2.5.0",
+    "toml==0.10.2",
 ]
 authors = [
     {name = "Tushar Khan", email = "tushar.54k@gmail.com"}
@@ -21,7 +24,7 @@ readme = "README.md"
 license = "MIT"
 
 [project.scripts]
-q = "q:main"
+q = "q:main" # "src.cli.main:main"
 
 [project.urls]
 Repository = "https://github.com/tk755/q"

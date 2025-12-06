@@ -1,10 +1,12 @@
 import base64
 from typing import Any
-from ..client import *
+from ..clients import Messages, TextClient, ImageClient, WebClient
 
 
 class OpenAIClient(TextClient, ImageClient, WebClient):
-    """OpenAI API client."""
+
+    def __str__(self) -> str:
+        return "OpenAI"
 
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -16,14 +18,6 @@ class OpenAIClient(TextClient, ImageClient, WebClient):
         except ImportError:
             raise ImportError("OpenAI client requires 'openai' package.")
         self._openai = openai
-
-    def _validate_auth(self):
-        try:
-            test_client = self._openai.OpenAI(api_key=self.api_key)
-            # make a minimal request to validate the key
-            test_client.models.list()
-        except Exception as e:
-            raise ValueError(f"OpenAI API key validation failed: {e}")
 
     def _should_retry(self, error: Exception) -> bool:
         # rate limits, connection issues, server errors
@@ -44,7 +38,7 @@ class OpenAIClient(TextClient, ImageClient, WebClient):
 
     def _create_async_client(self) -> Any:
         return self._openai.AsyncOpenAI(api_key=self.api_key)
-    
+
     async def _generate_response(self, messages: Messages, model: str, **model_args) -> Any:
         return await self._async_client.responses.create(
             input=messages,

@@ -1,12 +1,13 @@
 from typing import Any
-from ..client import *
+from ..clients import Messages, TextClient
 
 
 class AnthropicClient(TextClient):
-    """Anthropic API client."""
 
-    AUTH_TEST_MODEL = "claude-3-haiku-20240307"
     DEFAULT_MAX_TOKENS = 1024
+
+    def __str__(self) -> str:
+        return "Anthropic"
 
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -18,18 +19,6 @@ class AnthropicClient(TextClient):
         except ImportError:
             raise ImportError("Anthropic client requires 'anthropic' package.")
         self._anthropic = anthropic
-
-    def _validate_auth(self):
-        try:
-            test_client = self._anthropic.Anthropic(api_key=self.api_key)
-            # minimal request to validate the key
-            test_client.messages.create(
-                model=self.AUTH_TEST_MODEL,
-                max_tokens=1,
-                messages=[{"role": "user", "content": "test"}]
-            )
-        except Exception as e:
-            raise ValueError(f"Anthropic API key validation failed: {e}")
 
     def _should_retry(self, error: Exception) -> bool:
         # rate limits, connection issues, server errors
