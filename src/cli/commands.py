@@ -1,5 +1,6 @@
 import os
 import platform
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -13,9 +14,7 @@ from termcolor import colored
 from src import __version__
 from .agent import QAgent
 from .state import State, Session, create_session, get_sessions, load_session, get_api_key
-from .utils import use_color, format_output
-from ..providers.anthropic import AnthropicClient
-from ..providers.openai import OpenAIClient
+from ..providers import OpenAIClient, AnthropicClient
 
 
 class CommandError(Exception):
@@ -24,9 +23,12 @@ class CommandError(Exception):
 
 # region Registry
 
-DEFAULT_COMMAND = 't'
 COMMANDS: list[type['Command']] = []
 OPTIONS: list[type['Flag']] = []
+
+
+def get_default_command() -> type['Command']:
+    return TextCommand
 
 
 def get_flag_lookup() -> dict[str, type['Flag']]:
@@ -100,10 +102,30 @@ class Command(Flag):
     def post_execute_options(cls, result: str, parsed_args: ParsedArgs) -> str:
         """Process options that apply after execution."""
         if 'j' not in parsed_args:
-            result = format_output(result)
+            result = cls._format_response(result)
         if 'o' in parsed_args:
             Path(parsed_args['o']).write_text(result)
         return result
+
+    @classmethod
+    def _format_response(cls, text: str, code_color: str = 'cyan') -> str:
+        """Process LLM response for terminal display."""
+        # shorten links from web search responses
+        text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text).strip()
+
+        # convert two-plus newlines into only two
+        text = re.sub(r'\n{2,}', '\n\n', text)
+
+        # remove formatting from response-level code blocks
+        text = re.sub(r'^```.*?\n(.*)\n```$', r'\1', text, flags=re.DOTALL)
+
+        # convert code blocks into colored text
+        text = re.sub(r'```(?:\w+\n?)?(.*?)```', lambda m: colored(m.group(1).strip(), code_color), text, flags=re.DOTALL)
+
+        # convert inline-code into colored text
+        text = re.sub(r'`([^`]+)`', lambda m: colored(m.group(1), code_color), text)
+
+        return text
 
     @classmethod
     def get_agent(cls, parsed_args: ParsedArgs, state: State, system_prompt: str = '') -> QAgent:
@@ -296,7 +318,7 @@ class HelpCommand(Command):
                 flag_str += ' ?'
 
             flag_len = 11
-            flag_fmt = colored(f"{flag_str:<{flag_len}}", "green") if use_color() else f"{flag_str:<{flag_len}}"
+            flag_fmt = colored(f"{flag_str:<{flag_len}}", "green")
             line = f'    {flag_fmt}{f.desc}'
             if f in COMMANDS:
                 commands.append(line)
@@ -304,7 +326,7 @@ class HelpCommand(Command):
                 options.append(line)
 
         text = f'q {__version__} - an LLM-powered programming copilot from the comfort of your command line'
-        usage = colored('q [-flag [value]] ...', 'green') if use_color() else 'q [-flag [value]] ...'
+        usage = colored('q [-flag [value]] ...', 'green')
         text += '\n\nUsage: ' + usage + '\n'
         text += '\n  Flags can be combined: -sx = -s -x'
         text += '\n  Use -- to disable remaining flag parsing.'
@@ -359,9 +381,7 @@ class LoadCommand(Command):
                 preview = content[:max_len] + "..." if len(content) > max_len else content
                 break
 
-        if use_color():
-            return f"  {colored(f'{session.id}.', 'cyan')} {preview} {colored(f'({age})', 'dark_grey')}"
-        return f"  {session.id}: {preview} ({age})"
+        return f"  {colored(f'{session.id}.', 'cyan')} {preview} {colored(f'({age})', 'dark_grey')}"
 
 
 class AgentCommand(Command):

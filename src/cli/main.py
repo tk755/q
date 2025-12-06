@@ -1,31 +1,27 @@
 import sys
 
 from colorama import just_fix_windows_console
-from termcolor import cprint
+from termcolor import colored
 
 from .commands import CommandError
+from .terminal import output
 from .parser import ParseError, parse
 from .state import load_state, save_state
-from .utils import use_color
 
 
 def main():
-    if use_color():
-        just_fix_windows_console()
+    just_fix_windows_console()
 
     try:
         command, parsed_args = parse(sys.argv[1:])
         state = load_state()
         result = command.dispatch(parsed_args, state)
         if result:
-            print(result)
+            output(result)
         save_state(state)
 
     except (ParseError, CommandError) as e:
-        if use_color():
-            cprint(str(e), 'red', file=sys.stderr)
-        else:
-            print(str(e), file=sys.stderr)
+        output(colored(str(e), 'red'), file=sys.stderr)
         sys.exit(1)
 
     except KeyboardInterrupt:

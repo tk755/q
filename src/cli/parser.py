@@ -1,6 +1,6 @@
 import re
 
-from .commands import Command, Flag, ValueType, ParsedArgs, COMMANDS, DEFAULT_COMMAND, get_flag_lookup
+from .commands import Command, Flag, ValueType, ParsedArgs, COMMANDS, get_default_command, get_flag_lookup
 
 
 class ParseError(Exception):
@@ -116,7 +116,7 @@ def parse(argv: list[str]) -> tuple[type[Command], ParsedArgs]:
 
         # accumulate tokens (add default command if no pending flags)
         if not pending_flags:
-            pending_flags.append(flag_lookup[DEFAULT_COMMAND])
+            pending_flags.append(get_default_command())
         pending_tokens.append(token)
         pos += 1
 

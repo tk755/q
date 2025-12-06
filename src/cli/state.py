@@ -7,6 +7,8 @@ from pathlib import Path
 
 from dotenv import dotenv_values, set_key
 
+from .terminal import prompt
+
 
 RESOURCES_DIR = Path.home() / '.q'
 ENV_PATH = RESOURCES_DIR / '.env'
@@ -69,7 +71,7 @@ def save_secret(key: str, value: str) -> None:
 def get_api_key(state: State, provider: str) -> str:
     """Get API key for provider, prompting if missing."""
     if not state.secrets.get(provider):
-        key = input(f"{provider} API key not found. Please paste your key: ").strip()
+        key = prompt(f"{provider} API key not found. Please paste your key: ", color='yellow').strip()
         save_secret(_env_key(provider), key)
         state.secrets[provider] = key
         return key
