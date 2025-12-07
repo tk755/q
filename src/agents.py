@@ -11,12 +11,12 @@ T = TypeVar('T')
 class ChatAgent(Generic[T]):
     """Conversational agent with persistent message history."""
 
-    def __init__(self, client: Client[T], messages: list[Message] | None = None, system_prompt: str | None = None):
+    def __init__(self, client: Client[T], system: str | None = None, messages: list[Message] | None = None):
         self.client = client
         self.messages: list[Message] = messages.copy() if messages else []
 
-        if system_prompt:
-            self.messages.append(Message(role=Role.SYSTEM, content=system_prompt))
+        if system:
+            self.messages.append(Message(role=Role.SYSTEM, content=system))
 
     async def prompt(self, text: str) -> T:
         """Generate response and update conversation history."""
@@ -46,9 +46,9 @@ class ChatAgent(Generic[T]):
 class BatchAgent(Generic[T]):
     """Batch agent for applying a single prompt to multiple inputs concurrently."""
 
-    def __init__(self, client: Client[T], system_prompt: str | None = None):
+    def __init__(self, client: Client[T], system: str | None = None):
         self.client = client
-        self.system_prompt = system_prompt
+        self.system = system
 
     async def batch_prompt(self, text_list: list[str], n_threads: int = 8) -> list[T]:
         """Process multiple inputs concurrently and return the outputs in order."""
@@ -57,8 +57,8 @@ class BatchAgent(Generic[T]):
         async def process(text: str) -> T:
             async with semaphore:
                 messages: list[Message] = []
-                if self.system_prompt:
-                    messages.append(Message(role=Role.SYSTEM, content=self.system_prompt))
+                if self.system:
+                    messages.append(Message(role=Role.SYSTEM, content=self.system))
                 messages.append(Message(role=Role.USER, content=text))
                 return await self.client.generate(messages)
 

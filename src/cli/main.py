@@ -10,13 +10,13 @@ from .parser import ParseError, parse
 from .state import StateManager
 
 
-async def main():
+def main():
     just_fix_windows_console()
 
     try:
         command, parsed_args = parse(sys.argv[1:])
         state = StateManager()
-        result = await command.dispatch(parsed_args, state)
+        result = asyncio.run(command.dispatch(parsed_args, state))
         if result:
             output(result)
         state.save()
@@ -30,4 +30,4 @@ async def main():
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()

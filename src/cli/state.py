@@ -16,8 +16,7 @@ SESSIONS_DIR = RESOURCES_DIR / 'sessions'
 
 
 class Config(BaseModel):
-    provider: str = "openai"
-    model: str = "gpt-4.1-mini"
+    model: str = "openai/gpt-4.1-mini"
     code_lang: str = "python"
     current_session_id: int = 1
 
@@ -30,7 +29,7 @@ class Session(BaseModel):
 
 
 class StateManager:
-    """Manages application state: secrets, config, and current session."""
+    """Manages secrets, config, and current session."""
 
     def __init__(self):
         # ensure directories exist
@@ -50,10 +49,6 @@ class StateManager:
         self._save_session()
 
     # region Properties
-
-    @property
-    def provider(self) -> str:
-        return self._config.provider
 
     @property
     def model(self) -> str:
@@ -87,7 +82,7 @@ class StateManager:
         return self._secrets[provider]
 
     def _load_secrets(self) -> None:
-        """Load secrets from ~/.q/.env. Format: provider=key."""
+        """Load secrets from .env file."""
         self._secrets = {}
         if not ENV_PATH.exists():
             return
@@ -96,7 +91,7 @@ class StateManager:
                 self._secrets[provider.lower()] = os.environ.get(provider) or key
 
     def _save_secret(self, provider: str, key: str) -> None:
-        """Save secret to ~/.q/.env."""
+        """Save secrets to .env file."""
         if not ENV_PATH.exists():
             ENV_PATH.touch(mode=0o600)
         set_key(ENV_PATH, provider.lower(), key)

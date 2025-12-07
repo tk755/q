@@ -55,22 +55,25 @@ class ValueType(Enum):
 async def prompt_agent(client_str: str, system: str, text: str, parsed_args: ParsedArgs, state: StateManager) -> Any:
     """Create and prompt an agent."""
     # resolve provider and model
-    provider_name = state.provider
-    model = state.model
+    model_path = state.model
+    if '/' not in model_path:
+        raise CommandError(f"invalid model in config: '{model_path}' (expected provider/model)")
     if 'm' in parsed_args:
-        model_spec = parsed_args['m']
-        if '/' in model_spec:
-            provider_name, model = model_spec.split('/', 1)
+        model_arg = parsed_args['m']
+        if '/' in model_arg:
+            model_path = model_arg
         else:
-            model = model_spec
+            provider = model_path.split('/')[0]
+            model_path = f"{provider}/{model_arg}"
+    provider, model = model_path.split('/', 1)
 
     # dynamically create client
-    client_class = load_client_class(provider_name, client_str)
-    api_key = state.get_api_key(provider_name)
+    client_class = load_client_class(provider, client_str)
+    api_key = state.get_api_key(provider)
     client = client_class(api_key, model)
 
     # create agent
-    agent = ChatAgent(client, state.messages, system)
+    agent = ChatAgent(client, system, state.messages)
     if 'z' in parsed_args:
         agent.drop_exchanges(parsed_args['z'])
     
@@ -102,7 +105,6 @@ def _format_response(text: str, code_color: str = 'cyan') -> str:
 
 def _print_debug(state: StateManager) -> None:
     """Print debug information."""
-    print(f"[debug] provider: {state.provider}", file=sys.stderr)
     print(f"[debug] model: {state.model}", file=sys.stderr)
     print(f"[debug] session: {state.session_id}", file=sys.stderr)
     print(f"[debug] messages: {len(state.messages)}", file=sys.stderr)
@@ -303,7 +305,6 @@ class LoadCommand(Command):
 
     @classmethod
     async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
-        """Override dispatch - only -n matters, no provider."""
         session_id = parsed_args.get(cls.char)
         if session_id is None:
             return cls._format_sessions(state.list_sessions())

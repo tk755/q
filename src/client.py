@@ -1,7 +1,7 @@
 import asyncio
 import random
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from .message import Message
 
@@ -27,13 +27,9 @@ class Client(ABC, Generic[T]):
 
     async def generate(self, messages: list[Message]) -> T:
         """Generate output with retry logic."""
-        return await self._retry(self._generate, messages)
-
-    async def _retry(self, func: Callable[..., Any], *args, **kwargs) -> Any:
-        """Execute function with retry logic and exponential backoff."""
         for attempt in range(MAX_RETRIES + 1):
             try:
-                return await func(*args, **kwargs)
+                return await self._generate(messages)
             except Exception as e:
                 if attempt == MAX_RETRIES or not self._should_retry(e):
                     raise
