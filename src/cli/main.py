@@ -1,3 +1,4 @@
+import asyncio
 import sys
 
 from colorama import just_fix_windows_console
@@ -9,13 +10,13 @@ from .parser import ParseError, parse
 from .state import load_state, save_state
 
 
-def main():
+async def main():
     just_fix_windows_console()
 
     try:
         command, parsed_args = parse(sys.argv[1:])
         state = load_state()
-        result = command.dispatch(parsed_args, state)
+        result = await command.dispatch(parsed_args, state)
         if result:
             output(result)
         save_state(state)
@@ -29,4 +30,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())

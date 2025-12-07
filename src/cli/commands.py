@@ -1,3 +1,4 @@
+import importlib
 import os
 import platform
 import re
@@ -12,9 +13,9 @@ import humanize
 from termcolor import colored
 
 from src import __version__
-from .agent import QAgent
 from .state import State, Session, create_session, get_sessions, load_session, get_api_key
-from ..providers import OpenAIClient, AnthropicClient
+from ..agents import ChatAgent
+from ..message import Message
 
 
 class CommandError(Exception):
@@ -74,14 +75,14 @@ class Command(Flag):
             COMMANDS.append(cls)
 
     @classmethod
-    def dispatch(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def dispatch(cls, parsed_args: ParsedArgs, state: State) -> str:
         """Execute command with pre/post option handling."""
         cls.pre_execute_options(parsed_args, state)
-        result = cls.execute(parsed_args, state)
+        result = await cls.execute(parsed_args, state)
         return cls.post_execute_options(result, parsed_args)
 
     @classmethod
-    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
         """Core command logic. Override in subclasses."""
         raise NotImplementedError
 
@@ -128,8 +129,8 @@ class Command(Flag):
         return text
 
     @classmethod
-    def get_agent(cls, parsed_args: ParsedArgs, state: State, system_prompt: str = '') -> QAgent:
-        """Create a QAgent with resolved provider, model, and options."""
+    def get_agent(cls, parsed_args: ParsedArgs, state: State, system_prompt: str = '', capability: str = 'text'):
+        """Create a ChatAgent with resolved provider, model, and capability."""
         # resolve provider and model: -m flag > cls.model > config defaults
         provider = state.config.provider
         model = getattr(cls, 'model', None) or state.config.model
@@ -141,20 +142,24 @@ class Command(Flag):
             else:
                 model = model_spec
 
-        # create client
+        # get provider module
         api_key = get_api_key(state, provider)
-        if provider == 'openai':
-            client = OpenAIClient(api_key)
-        elif provider == 'anthropic':
-            client = AnthropicClient(api_key)
-        else:
-            raise CommandError(f"Unknown provider: {provider}")
+        try:
+            _provider = importlib.import_module(f'src.providers.{provider}')
+        except ModuleNotFoundError:
+            raise CommandError(f"Unknown provider: {provider}") from None
 
-        # create agent
-        agent = QAgent(
+        # create client by capability
+        client_class = getattr(_provider, f'{capability.title()}Client', None)
+        if client_class is None:
+            raise CommandError(f"Capability '{capability}' not supported by {provider}")
+        client = client_class(api_key, model)
+
+        # create agent (convert session dicts to Message objects)
+        messages = [Message.model_validate(m) for m in state.session.messages]
+        agent = ChatAgent(
             client,
-            model,
-            messages=state.session.messages,
+            messages=messages,
             system_prompt=system_prompt
         )
 
@@ -178,11 +183,11 @@ class PromptCommand(Command):
     model: str | None = None
 
     @classmethod
-    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
         """Prompt the agent and update session messages."""
         agent = cls.get_agent(parsed_args, state, cls.system)
-        response = agent.prompt(parsed_args[cls.char])
-        state.session.messages = agent.get_messages()
+        response = await agent.prompt(parsed_args[cls.char])
+        state.session.messages = [m.model_dump() for m in agent.messages]
         return response
 
 
@@ -203,7 +208,7 @@ class CodeCommand(PromptCommand):
     required = True
 
     @classmethod
-    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
         language = state.config.language
         system = f'You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Assume the programming language is {language} unless otherwise specified.'
 
@@ -214,8 +219,8 @@ class CodeCommand(PromptCommand):
         prompt = f'Generate a code snippet to accomplish the following task: {text}. Respond only with the code, without explanation or additional text.'
 
         agent = cls.get_agent(parsed_args, state, system)
-        response = agent.prompt(prompt)
-        state.session.messages = agent.get_messages()
+        response = await agent.prompt(prompt)
+        state.session.messages = [m.model_dump() for m in agent.messages]
         return response
 
 
@@ -227,7 +232,7 @@ class ExplainCommand(PromptCommand):
     system = 'You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity.'
 
     @classmethod
-    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
         text = parsed_args.get(cls.char) or ''
         file_content = cls.read_file(parsed_args)
         if file_content:
@@ -235,8 +240,8 @@ class ExplainCommand(PromptCommand):
         prompt = f'Explain: {text}'
 
         agent = cls.get_agent(parsed_args, state, cls.system)
-        response = agent.prompt(prompt)
-        state.session.messages = agent.get_messages()
+        response = await agent.prompt(prompt)
+        state.session.messages = [m.model_dump() for m in agent.messages]
         return response
 
 
@@ -248,7 +253,7 @@ class ShellCommand(PromptCommand):
     model = 'gpt-4.1-mini'
 
     @classmethod
-    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
         system_info = cls._get_system_info()
         system = f'You are a command-line assistant. Given a natural language task description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. System is running {system_info}.'
 
@@ -256,8 +261,8 @@ class ShellCommand(PromptCommand):
         prompt = f'Generate a single shell command to accomplish the following task: {text}. Respond with only the command, without explanation or additional text.'
 
         agent = cls.get_agent(parsed_args, state, system)
-        response = agent.prompt(prompt)
-        state.session.messages = agent.get_messages()
+        response = await agent.prompt(prompt)
+        state.session.messages = [m.model_dump() for m in agent.messages]
         return response
 
     @classmethod
@@ -285,13 +290,13 @@ class WebCommand(PromptCommand):
     system = 'You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence.'
 
     @classmethod
-    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
         text = parsed_args[cls.char]
         prompt = f'Fetch the following information: {text}.'
 
-        agent = cls.get_agent(parsed_args, state, cls.system)
-        response = agent.web_prompt(prompt)
-        state.session.messages = agent.get_messages()
+        agent = cls.get_agent(parsed_args, state, cls.system, capability='web')
+        response = await agent.prompt(prompt)
+        state.session.messages = [m.model_dump() for m in agent.messages]
         return response
 
 
@@ -302,7 +307,7 @@ class HelpCommand(Command):
     required = False
 
     @classmethod
-    def dispatch(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def dispatch(cls, parsed_args: ParsedArgs, state: State) -> str:
         commands = []
         options = []
 
@@ -342,7 +347,7 @@ class LoadCommand(Command):
     value_type = ValueType.INT
 
     @classmethod
-    def dispatch(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def dispatch(cls, parsed_args: ParsedArgs, state: State) -> str:
         cls.pre_execute_options(parsed_args, state)
         session_id = parsed_args.get(cls.char)
         if session_id is None:
@@ -391,28 +396,28 @@ class AgentCommand(Command):
     required = True
 
     @classmethod
-    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
         raise CommandError("Command not implemented yet")
 
 
 class ImageCommand(Command):
-    char ='i'
+    char = 'i'
     desc = 'image'
     value_type = ValueType.TEXT
     required = True
     model = 'gpt-image-1'
 
     @classmethod
-    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
-        agent = cls.get_agent(parsed_args, state)
-        image_bytes = agent.image_prompt(parsed_args[cls.char], cls.model)
+    async def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+        agent = cls.get_agent(parsed_args, state, capability='image')
+        image_bytes = await agent.prompt(parsed_args[cls.char])
 
         # save image to file
         output_path = parsed_args.get('o')
         if not output_path:
             output_path = 'output.png'
         Path(output_path).write_bytes(image_bytes)
-        state.session.messages = agent.get_messages()
+        state.session.messages = [m.model_dump() for m in agent.messages]
         return f"Image saved to {output_path}"
 
 
@@ -422,7 +427,7 @@ class RetrievalCommand(Command):
     value_type = ValueType.TEXT
 
     @classmethod
-    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
         raise CommandError("Command not implemented yet")
 
 
@@ -433,7 +438,7 @@ class UserCommand(Command):
     required = True
 
     @classmethod
-    def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
+    async def execute(cls, parsed_args: ParsedArgs, state: State) -> str:
         raise CommandError("Command not implemented yet")
 
 

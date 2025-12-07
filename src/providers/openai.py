@@ -1,16 +1,15 @@
 import base64
-from typing import Any
-from ..clients import Messages, TextClient, ImageClient, WebClient
+from typing import Any, TypeVar
+
+from ..client import Client
+from ..message import Message
 
 
-class OpenAIClient(TextClient, ImageClient, WebClient):
+T = TypeVar('T')
 
-    def __str__(self) -> str:
-        return "OpenAI"
 
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        super().__init__()
+class OpenAIClient(Client[T]):
+    """Base client for OpenAI API."""
 
     def _import_sdk(self):
         try:
@@ -20,7 +19,6 @@ class OpenAIClient(TextClient, ImageClient, WebClient):
         self._openai = openai
 
     def _should_retry(self, error: Exception) -> bool:
-        # rate limits, connection issues, server errors
         if isinstance(error, (
             self._openai.RateLimitError,
             self._openai.APIConnectionError,
@@ -29,7 +27,6 @@ class OpenAIClient(TextClient, ImageClient, WebClient):
         )):
             return True
 
-        # generic API errors with retryable status codes
         if isinstance(error, self._openai.APIStatusError):
             if error.status_code == 429 or 500 <= error.status_code < 600:
                 return True
@@ -39,40 +36,54 @@ class OpenAIClient(TextClient, ImageClient, WebClient):
     def _create_async_client(self) -> Any:
         return self._openai.AsyncOpenAI(api_key=self.api_key)
 
-    async def _generate_response(self, messages: Messages, model: str, **model_args) -> Any:
-        return await self._async_client.responses.create(
-            input=messages,
-            model=model,
-            **model_args
+    def _convert_messages(self, messages: list[Message]) -> list[dict]:
+        """Convert Message objects to API format."""
+        return [msg.model_dump(include={"role", "content"}) for msg in messages]
+
+
+class TextClient(OpenAIClient[str]):
+    """OpenAI text generation client."""
+
+    async def _generate(self, messages: list[Message]) -> str:
+        response = await self._async_client.responses.create(
+            input=self._convert_messages(messages),
+            model=self.model,
+            **self.model_args
         )
+        return response.output_text
 
-    async def _generate_text_async(self, messages: Messages, model: str, **model_args) -> str:
-        return (await self._generate_response(messages, model, **model_args)).output_text
 
-    async def _web_search_async(self, messages: Messages, model: str, **model_args) -> str:
-        # add web search tool
-        if 'tools' not in model_args:
-            model_args['tools'] = [{
-                'type': 'web_search_preview',
-                'search_context_size': 'low'  # low, medium, high
-            }]
-        return (await self._generate_response(messages, model, **model_args)).output_text
+class WebClient(OpenAIClient[str]):
+    """OpenAI web search client."""
+
+    DEFAULT_TOOLS = [{'type': 'web_search_preview', 'search_context_size': 'low'}]
+
+    async def _generate(self, messages: list[Message]) -> str:
+        args = {'tools': self.DEFAULT_TOOLS, **self.model_args}
+        response = await self._async_client.responses.create(
+            input=self._convert_messages(messages),
+            model=self.model,
+            **args
+        )
+        return response.output_text
+
+
+class ImageClient(OpenAIClient[bytes]):
+    """OpenAI image generation client."""
+
+    DEFAULT_TOOLS = [{'type': 'image_generation', 'size': '1024x1024', 'quality': 'auto'}]
+
+    async def _generate(self, messages: list[Message]) -> bytes:
+        args = {'tools': self.DEFAULT_TOOLS, **self.model_args}
+        response = await self._async_client.responses.create(
+            input=self._convert_messages(messages),
+            model=self.model,
+            **args
+        )
+        return self._extract_image(response)
 
     def _extract_image(self, response: Any) -> bytes:
         for output in response.output:
             if output.type == 'image_generation_call':
                 return base64.b64decode(output.result)
         raise ValueError("No image_generation_call found in response output")
-
-    async def _generate_image_async(self, messages: Messages, model: str, **model_args) -> bytes:
-        # add image generation tool
-        if 'tools' not in model_args:
-            model_args['tools'] = [{
-                'type': 'image_generation',
-                'size': '1024x1024',
-                'quality': 'auto'  # auto, low, medium, high
-            }]
-        return self._extract_image(await self._generate_response(messages, model, **model_args))
-
-    async def _edit_image_async(self, messages: Messages, model: str, **model_args) -> bytes:
-        raise NotImplementedError("Image editing not yet implemented")
