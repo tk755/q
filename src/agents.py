@@ -16,16 +16,16 @@ class ChatAgent(Generic[T]):
         self.messages: list[Message] = messages.copy() if messages else []
 
         if system_prompt:
-            self.messages.append(Message(Role.SYSTEM, system_prompt))
+            self.messages.append(Message(role=Role.SYSTEM, content=system_prompt))
 
     async def prompt(self, text: str) -> T:
         """Generate response and update conversation history."""
-        self.messages.append(Message(Role.USER, text))
+        self.messages.append(Message(role=Role.USER, content=text))
         response = await self.client.generate(self.messages)
 
         # only add to history if response is a string
         if isinstance(response, str):
-            self.messages.append(Message(Role.ASSISTANT, response))
+            self.messages.append(Message(role=Role.ASSISTANT, content=response))
 
         return response
 
@@ -58,8 +58,8 @@ class BatchAgent(Generic[T]):
             async with semaphore:
                 messages: list[Message] = []
                 if self.system_prompt:
-                    messages.append(Message(Role.SYSTEM, self.system_prompt))
-                messages.append(Message(Role.USER, text))
+                    messages.append(Message(role=Role.SYSTEM, content=self.system_prompt))
+                messages.append(Message(role=Role.USER, content=text))
                 return await self.client.generate(messages)
 
         tasks = [process(text) for text in text_list]

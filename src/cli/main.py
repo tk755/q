@@ -7,7 +7,7 @@ from termcolor import colored
 from .commands import CommandError
 from .terminal import output
 from .parser import ParseError, parse
-from .state import load_state, save_state
+from .state import StateManager
 
 
 async def main():
@@ -15,11 +15,11 @@ async def main():
 
     try:
         command, parsed_args = parse(sys.argv[1:])
-        state = load_state()
+        state = StateManager()
         result = await command.dispatch(parsed_args, state)
         if result:
             output(result)
-        save_state(state)
+        state.save()
 
     except (ParseError, CommandError) as e:
         output(colored(str(e), 'red'), file=sys.stderr)
