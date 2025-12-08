@@ -7,10 +7,11 @@ from src.client import Client
 def load_provider_module(provider_str: str) -> ModuleType:
     """Dynamically load provider module."""
     try:
-        return importlib.import_module(f'src.providers.{provider_str}')
-    except ModuleNotFoundError:
-        raise ImportError(f"unknown provider: {provider_str}")
-    
+        return importlib.import_module(f"src.providers.{provider_str}")
+    except ModuleNotFoundError as err:
+        raise ImportError(f"unknown provider: {provider_str}") from err
+
+
 def load_client_class(provider_str: str, client_str: str) -> type[Client]:
     """Dynamically load provider client class."""
     provider_module = load_provider_module(provider_str)

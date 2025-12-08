@@ -2,9 +2,9 @@ import asyncio
 import sys
 
 from .commands import CommandError
-from .terminal import qprint
 from .parser import ParseError, parse
 from .state import StateManager
+from .terminal import qprint
 
 
 def main():
@@ -15,12 +15,12 @@ def main():
         state.save()
 
     except (ParseError, CommandError, ImportError) as e:
-        qprint(str(e), color='red', file=sys.stderr)
+        qprint(str(e), color="red", file=sys.stderr)
         sys.exit(1)
 
     except KeyboardInterrupt:
         sys.exit(130)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

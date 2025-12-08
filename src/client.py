@@ -5,8 +5,7 @@ from typing import Any, Generic, TypeVar
 
 from .message import Message
 
-
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 MAX_RETRIES = 3
@@ -18,7 +17,6 @@ class Client(ABC, Generic[T]):
     """Base client for LLM providers."""
 
     def __init__(self, api_key: str, model: str, **model_args):
-        """Initialize client with credentials, model, and optional model args."""
         self.api_key = api_key
         self.model = model
         self.model_args = model_args
@@ -37,27 +35,22 @@ class Client(ABC, Generic[T]):
 
     def _calc_backoff(self, attempt: int) -> float:
         """Calculate exponential backoff delay with jitter."""
-        base_delay = BACKOFF_FACTOR ** attempt
+        base_delay = BACKOFF_FACTOR**attempt
         jitter = random.uniform(0, MAX_JITTER * base_delay)
         return base_delay + jitter
 
     @abstractmethod
     async def _generate(self, messages: list[Message]) -> T:
         """Make API call and return output."""
-        pass
 
     @abstractmethod
     def _import_sdk(self):
         """Import provider SDK lazily to avoid loading unused dependencies."""
-        pass
 
     @abstractmethod
     def _should_retry(self, error: Exception) -> bool:
         """Determine which errors should trigger retry attempt."""
-        pass
 
     @abstractmethod
     def _create_async_client(self) -> Any:
         """Create provider client instance."""
-        pass
-

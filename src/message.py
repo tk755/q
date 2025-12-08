@@ -4,9 +4,9 @@ from pydantic import BaseModel
 
 
 class Role(str, Enum):
-    ASSISTANT = 'assistant'
-    SYSTEM = 'system'
-    USER = 'user'
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    USER = "user"
 
 
 class Message(BaseModel):

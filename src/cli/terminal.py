@@ -14,9 +14,9 @@ def _sanitize_text(text: str) -> str:
     # check if output is a terminal
     if sys.stdout.isatty():
         return text
-    
+
     # strip ANSI color codes
-    return re.sub(r'\x1b\[[0-9;]*m', '', text)
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 def qprint(*values: str, color: str | None = None, **kwargs):
@@ -27,7 +27,7 @@ def qprint(*values: str, color: str | None = None, **kwargs):
     print(*values, **kwargs)
 
 
-def qinput(text: str = '', color: str | None = None, secret: bool = False) -> str:
+def qinput(text: str = "", color: str | None = None, secret: bool = False) -> str:
     """Prompt user for input. No echo if secret=True."""
     if color:
         text = colored(text, color)

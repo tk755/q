@@ -1,6 +1,6 @@
 import re
 
-from .commands import Command, Flag, ValueType, ParsedArgs, COMMANDS, get_default_command, get_flag_lookup
+from .commands import COMMANDS, Command, Flag, ParsedArgs, ValueType, get_default_command, get_flag_lookup
 
 
 class ParseError(Exception):
@@ -28,27 +28,36 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
         optional = [f for f in value_flags if not f.required]
 
         # exclude INT flags for non-integer values
-        if len(pending_tokens) > 1 or not pending_tokens[0].lstrip('-').isdigit():
+        if len(pending_tokens) > 1 or not pending_tokens[0].lstrip("-").isdigit():
             optional = [f for f in optional if f.value_type != ValueType.INT]
 
         # resolve consumer
         if len(required) == 1:
             consumer = required[0]
         elif len(required) > 1:
-            raise ParseError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in required))
+            raise ParseError(
+                f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in required)
+            )
         elif len(optional) == 1:
             consumer = optional[0]
         elif len(optional) > 1:
-            raise ParseError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in optional))
+            raise ParseError(
+                f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in optional)
+            )
         else:
-            raise ParseError(f"unexpected token{'' if len(pending_tokens) == 1 else 's'}: " + ", ".join(f"'{t}'" for t in pending_tokens))
+            raise ParseError(
+                f"unexpected token{'' if len(pending_tokens) == 1 else 's'}: "
+                + ", ".join(f"'{t}'" for t in pending_tokens)
+            )
 
         # extract value based on type
         if consumer.value_type == ValueType.TEXT:
-            value = ' '.join(pending_tokens)
+            value = " ".join(pending_tokens)
         else:  # STR or INT
             if len(pending_tokens) > 1:
-                raise ParseError(f"-{consumer.char} expects one token but got: " + ", ".join(f"'{t}'" for t in pending_tokens))
+                raise ParseError(
+                    f"-{consumer.char} expects one token but got: " + ", ".join(f"'{t}'" for t in pending_tokens)
+                )
             value = pending_tokens[0]
             if consumer.value_type == ValueType.INT:
                 try:
@@ -85,19 +94,21 @@ def parse(argv: list[str]) -> tuple[type[Command], ParsedArgs]:
         token = argv[pos] if not at_end else None
 
         # handle -- sentinel
-        if token == '--' and flag_parsing_enabled:
+        if token == "--" and flag_parsing_enabled:
             flag_parsing_enabled = False
             pos += 1
             continue
 
         # resolve at boundary (new flag or end)
-        is_flag = flag_parsing_enabled and token and bool(re.match(r'^-[a-z]+$', token))
+        is_flag = flag_parsing_enabled and token and bool(re.match(r"^-[a-z]+$", token))
         if is_flag or at_end:
             resolved = _resolve_pending(pending_flags, pending_tokens)
 
             duplicates = set(resolved.keys()) & set(parsed_args.keys())
             if duplicates:
-                raise ParseError(f"duplicate flag{'' if len(duplicates) == 1 else 's'}: " + ", ".join(f"-{k}" for k in duplicates))
+                raise ParseError(
+                    f"duplicate flag{'' if len(duplicates) == 1 else 's'}: " + ", ".join(f"-{k}" for k in duplicates)
+                )
 
             parsed_args.update(resolved)
             pending_flags, pending_tokens = [], []

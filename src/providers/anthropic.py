@@ -3,8 +3,7 @@ from typing import Any, TypeVar
 from ..client import Client
 from ..message import Message, Role
 
-
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class AnthropicClient(Client[T]):
@@ -14,15 +13,19 @@ class AnthropicClient(Client[T]):
 
     def _import_sdk(self):
         import anthropic
+
         self._anthropic = anthropic
 
     def _should_retry(self, error: Exception) -> bool:
-        if isinstance(error, (
-            self._anthropic.RateLimitError,
-            self._anthropic.APIConnectionError,
-            self._anthropic.APITimeoutError,
-            self._anthropic.InternalServerError
-        )):
+        if isinstance(
+            error,
+            (
+                self._anthropic.RateLimitError,
+                self._anthropic.APIConnectionError,
+                self._anthropic.APITimeoutError,
+                self._anthropic.InternalServerError,
+            ),
+        ):
             return True
 
         if isinstance(error, self._anthropic.APIStatusError):
@@ -37,8 +40,8 @@ class AnthropicClient(Client[T]):
     def _default_model_args(self) -> dict:
         """Get missing model args required by API."""
         args = dict(self.model_args)
-        if 'max_tokens' not in args:
-            args['max_tokens'] = self.DEFAULT_MAX_TOKENS
+        if "max_tokens" not in args:
+            args["max_tokens"] = self.DEFAULT_MAX_TOKENS
         return args
 
     def _convert_messages(self, messages: list[Message]) -> tuple[str | None, list[dict]]:
@@ -62,9 +65,6 @@ class TextClient(AnthropicClient[str]):
         system_prompt, api_messages = self._convert_messages(messages)
 
         response = await self._async_client.messages.create(
-            messages=api_messages,
-            system=system_prompt,
-            model=self.model,
-            **self._default_model_args()
+            messages=api_messages, system=system_prompt, model=self.model, **self._default_model_args()
         )
         return response.content[0].text

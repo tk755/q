@@ -5,14 +5,13 @@ from pathlib import Path
 from dotenv import dotenv_values, set_key
 from pydantic import BaseModel, Field
 
-from .terminal import qinput
 from ..message import Message
+from .terminal import qinput
 
-
-RESOURCES_DIR = Path.home() / '.q'
-ENV_PATH = RESOURCES_DIR / '.env'
-CONFIG_PATH = RESOURCES_DIR / 'config.json'
-SESSIONS_DIR = RESOURCES_DIR / 'sessions'
+RESOURCES_DIR = Path.home() / ".q"
+ENV_PATH = RESOURCES_DIR / ".env"
+CONFIG_PATH = RESOURCES_DIR / "config.json"
+SESSIONS_DIR = RESOURCES_DIR / "sessions"
 
 
 class Config(BaseModel):
@@ -76,7 +75,7 @@ class StateManager:
         """Get API key for provider, prompting if not found."""
         provider = provider.lower()
         if provider not in self._secrets:
-            key = qinput(f"{provider} API key not found. Please paste your key: ", color='yellow', secret=True).strip()
+            key = qinput(f"{provider} API key not found. Please paste your key: ", color="yellow", secret=True).strip()
             self._save_secret(provider, key)
             self._secrets[provider] = key
         return self._secrets[provider]
@@ -113,19 +112,14 @@ class StateManager:
 
     def new_session(self) -> None:
         """Create and switch to a new session."""
-        existing = [int(p.stem) for p in SESSIONS_DIR.glob('*.json') if p.stem.isdigit()]
+        existing = [int(p.stem) for p in SESSIONS_DIR.glob("*.json") if p.stem.isdigit()]
         now = datetime.now(timezone.utc)
-        self._session = Session(
-            id=max(existing, default=0) + 1,
-            messages=[],
-            created=now,
-            updated=now
-        )
+        self._session = Session(id=max(existing, default=0) + 1, messages=[], created=now, updated=now)
 
     def list_sessions(self) -> list[Session]:
         """Return all sessions sorted by ID."""
         sessions = []
-        for path in sorted(SESSIONS_DIR.glob('*.json'), key=lambda p: int(p.stem)):
+        for path in sorted(SESSIONS_DIR.glob("*.json"), key=lambda p: int(p.stem)):
             try:
                 sessions.append(Session.model_validate_json(path.read_text()))
             except ValueError:
@@ -134,7 +128,7 @@ class StateManager:
 
     def load_session(self, session_id: int) -> bool:
         """Load session by ID. Returns False if not found."""
-        path = SESSIONS_DIR / f'{session_id}.json'
+        path = SESSIONS_DIR / f"{session_id}.json"
         if not path.exists():
             return False
         self._session = Session.model_validate_json(path.read_text())
@@ -143,5 +137,5 @@ class StateManager:
     def _save_session(self) -> None:
         """Save current session to JSON."""
         self._session.updated = datetime.now(timezone.utc)
-        path = SESSIONS_DIR / f'{self._session.id}.json'
+        path = SESSIONS_DIR / f"{self._session.id}.json"
         path.write_text(self._session.model_dump_json(indent=2))

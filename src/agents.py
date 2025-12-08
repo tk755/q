@@ -4,8 +4,7 @@ from typing import Generic, TypeVar
 from .client import Client
 from .message import Message, Role
 
-
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class ChatAgent(Generic[T]):
