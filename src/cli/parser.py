@@ -46,7 +46,8 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
             )
         else:
             raise ParseError(
-                f"unexpected token{'' if len(pending_tokens) == 1 else 's'}: "
+                ", ".join(f"-{f.char}" for f in pending_flags)
+                + f" received invalid argument{('s' if len(pending_tokens) > 1 else '')}: "
                 + ", ".join(f"'{t}'" for t in pending_tokens)
             )
 

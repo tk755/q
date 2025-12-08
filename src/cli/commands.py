@@ -58,37 +58,6 @@ class ValueType(Enum):
 # region Helpers
 
 
-async def prompt_agent(client_str: str, system: str, text: str, parsed_args: ParsedArgs, state: StateManager) -> Any:
-    """Create and prompt an agent."""
-    # resolve provider and model
-    model_path = state.model
-    if "/" not in model_path:
-        raise CommandError(f"invalid model in config: '{model_path}' (expected provider/model)")
-    if "m" in parsed_args:
-        model_arg = parsed_args["m"]
-        if "/" in model_arg:
-            model_path = model_arg
-        else:
-            provider = model_path.split("/")[0]
-            model_path = f"{provider}/{model_arg}"
-    provider, model = model_path.split("/", 1)
-
-    # dynamically create client
-    client_class = load_client_class(provider, client_str)
-    api_key = state.get_api_key(provider)
-    client = client_class(api_key, model)
-
-    # create agent
-    agent = ChatAgent(client, system, state.messages)
-    if "z" in parsed_args:
-        agent.drop_exchanges(parsed_args["z"])
-
-    # prompt agent and update state
-    response = await agent.prompt(text)
-    state.messages = agent.messages
-    return response
-
-
 def _format_response(text: str, code_color: str = "cyan") -> str:
     """Process LLM response for terminal display."""
     # shorten links from web search responses
@@ -140,7 +109,14 @@ class Command(Flag):
 
     @classmethod
     async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
-        """Execute command with option handling and output routing."""
+        """Execute command."""
+
+
+class AgentCommand(Command):
+    """Base class for commands that prompt an agent."""
+
+    @classmethod
+    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
         # pre-agent options
         if "v" in parsed_args:
             pass  # TODO
@@ -165,15 +141,47 @@ class Command(Flag):
             qprint(response)
 
     @classmethod
+    async def prompt_agent(
+        cls, client_str: str, system: str | None, parsed_args: ParsedArgs, state: StateManager
+    ) -> Any:
+        """Create and prompt an agent."""
+        # resolve provider and model
+        model_path = state.model
+        if "/" not in model_path:
+            raise CommandError(f"invalid model in config: '{model_path}' (expected provider/model)")
+        if "m" in parsed_args:
+            model_arg = parsed_args["m"]
+            if "/" in model_arg:
+                model_path = model_arg
+            else:
+                provider = model_path.split("/")[0]
+                model_path = f"{provider}/{model_arg}"
+        provider, model = model_path.split("/", 1)
+
+        # dynamically create client
+        client_class = load_client_class(provider, client_str)
+        api_key = state.get_api_key(provider)
+        client = client_class(api_key, model)
+
+        # create agent
+        agent = ChatAgent(client, system, state.messages)
+        if "z" in parsed_args:
+            agent.drop_exchanges(parsed_args["z"])
+
+        # prompt agent and update state
+        response = await agent.prompt(parsed_args[cls.char])
+        state.messages = agent.messages
+        return response
+
+    @classmethod
     async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str | None:
         """Generate command response. Return None if command handles its own output."""
-        raise NotImplementedError
 
 
 # region Commands
 
 
-class TextCommand(Command):
+class TextCommand(AgentCommand):
     char = "t"
     desc = "text"
     value_type = ValueType.TEXT
@@ -181,12 +189,10 @@ class TextCommand(Command):
 
     @classmethod
     async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
-        system = "You are a helpful assistant."
-        text = parsed_args[cls.char]
-        return await prompt_agent("TextClient", system, text, parsed_args, state)
+        return await cls.prompt_agent("TextClient", None, parsed_args, state)
 
 
-class ExplainCommand(Command):
+class ExplainCommand(AgentCommand):
     char = "e"
     desc = "explain"
     value_type = ValueType.TEXT
@@ -194,11 +200,10 @@ class ExplainCommand(Command):
     @classmethod
     async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
         system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
-        text = f"Explain: {parsed_args[cls.char]}"
-        return await prompt_agent("TextClient", system, text, parsed_args, state)
+        return await cls.prompt_agent("TextClient", system, parsed_args, state)
 
 
-class CodeCommand(Command):
+class CodeCommand(AgentCommand):
     char = "c"
     desc = "code"
     value_type = ValueType.TEXT
@@ -207,11 +212,10 @@ class CodeCommand(Command):
     @classmethod
     async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
         system = f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Assume the programming language is {state.code_lang} unless otherwise specified."
-        text = f"Generate a code snippet to accomplish the following task: {parsed_args[cls.char]}. Respond only with the code, without explanation or additional text."
-        return await prompt_agent("TextClient", system, text, parsed_args, state)
+        return await cls.prompt_agent("TextClient", system, parsed_args, state)
 
 
-class ShellCommand(Command):
+class ShellCommand(AgentCommand):
     char = "s"
     desc = "shell"
     value_type = ValueType.TEXT
@@ -219,9 +223,8 @@ class ShellCommand(Command):
 
     @classmethod
     async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
-        system = f"You are a command-line assistant. Given a natural language task description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. System is running {cls._get_system_info()}."
-        text = f"Generate a single shell command to accomplish the following task: {parsed_args[cls.char]}. Respond with only the command, without explanation or additional text."
-        return await prompt_agent("TextClient", system, text, parsed_args, state)
+        system = f"You are a command-line assistant. Given a description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. System is running {cls._get_system_info()}."
+        return await cls.prompt_agent("TextClient", system, parsed_args, state)
 
     @classmethod
     def _get_system_info(cls) -> str:
@@ -238,7 +241,7 @@ class ShellCommand(Command):
         return system
 
 
-class WebCommand(Command):
+class WebCommand(AgentCommand):
     char = "w"
     desc = "web"
     value_type = ValueType.TEXT
@@ -246,12 +249,11 @@ class WebCommand(Command):
 
     @classmethod
     async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
-        system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence."
-        text = f"Fetch the following information: {parsed_args[cls.char]}."
-        return await prompt_agent("WebClient", system, text, parsed_args, state)
+        system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence. Always search the internet."
+        return await cls.prompt_agent("WebClient", system, parsed_args, state)
 
 
-class ImageCommand(Command):
+class ImageCommand(AgentCommand):
     char = "i"
     desc = "image"
     value_type = ValueType.TEXT
@@ -259,9 +261,8 @@ class ImageCommand(Command):
 
     @classmethod
     async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
-        system = "Generate an image of the following description."
-        text = parsed_args[cls.char]
-        image = await prompt_agent("ImageClient", system, text, parsed_args, state)
+        system = "Generate an image given a description."
+        image = await cls.prompt_agent("ImageClient", system, parsed_args, state)
         cls.save_image(parsed_args, image)
 
     @classmethod
@@ -280,18 +281,18 @@ class RetrievalCommand(Command):
 
     @classmethod
     async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
-        raise CommandError(f"-{cls.char} command not yet implemented")
+        raise CommandError(f"-{cls.char} not yet implemented")
 
 
-class AgentCommand(Command):
+class AutoCommand(Command):
     char = "a"
-    desc = "agent"
+    desc = "auto"
     value_type = ValueType.TEXT
     required = True
 
     @classmethod
     async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
-        raise CommandError(f"-{cls.char} command not yet implemented")
+        raise CommandError(f"-{cls.char} not yet implemented")
 
 
 class UserCommand(Command):
@@ -302,7 +303,7 @@ class UserCommand(Command):
 
     @classmethod
     async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
-        raise CommandError(f"-{cls.char} command not yet implemented")
+        raise CommandError(f"-{cls.char} not yet implemented")
 
 
 class LoadCommand(Command):
@@ -314,36 +315,33 @@ class LoadCommand(Command):
     async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
         session_id = parsed_args.get(cls.char)
         if session_id is None:
-            qprint(cls._format_sessions(state.list_sessions()))
+            cls._print_sessions(state.list_sessions(), state.session_id)
             return
         if not state.load_session(session_id):
             raise CommandError(f"invalid session: {session_id}")
-        qprint(f"loaded session {session_id}", color="yellow", file=sys.stderr)
+        qprint(f"Loaded session {session_id}", color="yellow", file=sys.stderr)
 
     @classmethod
-    def _format_sessions(cls, sessions: list[Session]) -> str:
+    def _print_sessions(cls, sessions: list[Session], current_id: int) -> None:
         if not sessions:
-            return "No sessions found."
-        lines = [cls._format_session(s) for s in sessions]
-        return "\n".join(lines)
+            qprint("No sessions found.")
+            return
 
-    @classmethod
-    def _format_session(cls, session: Session) -> str:
-        age = humanize.naturaltime(session.updated) if session.updated else "unknown"
-
-        # calculate max preview length based on terminal width
         term_width = shutil.get_terminal_size().columns
-        prefix_len = len(f"  {session.id}. ")
-        suffix_len = len(f" ({age})")
-        max_len = max(20, term_width - prefix_len - suffix_len - 3)  # 3 for "..."
+        for s in sessions:
+            age = humanize.naturaltime(s.updated) if s.updated else "unknown"
+            prefix_len = len(f"    {s.id}.  ")
+            suffix_len = len(f" ({age})")
+            max_len = max(20, term_width - prefix_len - suffix_len - 5)  # at least -3 for ellipsis
 
-        preview = "(empty)"
-        for msg in session.messages:
-            if msg.role == Role.USER:
-                preview = msg.content[:max_len] + "..." if len(msg.content) > max_len else msg.content
-                break
+            preview = "(empty)"
+            for msg in reversed(s.messages):
+                if msg.role == Role.USER:
+                    preview = msg.content[:max_len] + "..." if len(msg.content) > max_len else msg.content
+                    break
 
-        return f"  {colored(f'{session.id}.', 'yellow')} {preview} {colored(f'({age})', 'dark_grey')}"
+            line = f"    {s.id}.  {preview} ({age})"
+            qprint(line if s.id == current_id else colored(line, "dark_grey"))
 
 
 class HelpCommand(Command):
@@ -361,40 +359,40 @@ class HelpCommand(Command):
 
     @classmethod
     def _help_prompt(cls) -> str:
-        raise NotImplementedError
+        raise CommandError("-h <text> not yet implemented")
 
     @classmethod
     def _help_text(cls) -> str:
-        commands = []
-        options = []
+        usage_color = "green"
+        command_color = "cyan"
+        option_color = "dark_grey"
 
+        flags = []
         for f in sorted(COMMANDS + OPTIONS, key=lambda f: f.char):
-            flag_str = f"-{f.char}"
+            flag_arg = ""
             if f.value_type == ValueType.INT:
-                flag_str += " int "
+                flag_arg += "N"
             elif f.value_type == ValueType.STR:
-                flag_str += " str "
+                flag_arg += "str"
             elif f.value_type == ValueType.TEXT:
-                flag_str += " text"
-            if f.value_type != ValueType.NONE and not f.required:
-                flag_str += " ?"
+                flag_arg += "text"
+            if f.value_type != ValueType.NONE:
+                if f.required:
+                    flag_arg = f"<{flag_arg}>"
+                else:
+                    flag_arg = f"[{flag_arg}]"
 
-            flag_len = 11
-            flag_fmt = colored(f"{flag_str:<{flag_len}}", "green")
-            line = f"    {flag_fmt}{f.desc}"
-            if f in COMMANDS:
-                commands.append(line)
-            else:
-                options.append(line)
+            flag_str = f"-{f.char}  {f.desc} {flag_arg}"
+            flag_fmt = colored(flag_str, command_color if f in COMMANDS else option_color)
+            flags.append(f"    {flag_fmt:<{10}}")
 
-        text = f"q {__version__} - an LLM-powered programming copilot from the comfort of your command line"
-        usage = colored("q [-flag [value]] ...", "green")
+        text = f"q {__version__} - a command line programming agent"
+        usage = colored("q [-flag [value]] ...", usage_color)
         text += "\n\nUsage: " + usage + "\n"
         text += "\n  Flags can be combined: -sx = -s -x"
         text += "\n  Use -- to disable remaining flag parsing."
-        text += "\n  One command is required."
-        text += "\n\nCommands:\n" + "\n".join(commands)
-        text += "\n\nOptions:\n" + "\n".join(options)
+        text += "\n  One " + colored("command", command_color) + " is required."
+        text += "\n\nFlags:\n" + "\n".join(flags)
         return text
 
 
@@ -423,7 +421,7 @@ class FileOption(Flag):
 
 class JsonOption(Flag):
     char = "j"
-    desc = "json output"
+    desc = "json"
 
 
 class ModelOption(Flag):
@@ -452,12 +450,12 @@ class VerboseOption(Flag):
 
 class ExecuteOption(Flag):
     char = "x"
-    desc = "execute shell"
+    desc = "execute"
 
 
 class YesOption(Flag):
     char = "y"
-    desc = "yes always"
+    desc = "accept all"
 
 
 class UndoOption(Flag):
