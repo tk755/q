@@ -5,7 +5,7 @@ from pathlib import Path
 from dotenv import dotenv_values, set_key
 from pydantic import BaseModel, Field
 
-from .terminal import prompt
+from .terminal import qinput
 from ..message import Message
 
 
@@ -76,7 +76,7 @@ class StateManager:
         """Get API key for provider, prompting if not found."""
         provider = provider.lower()
         if provider not in self._secrets:
-            key = prompt(f"{provider} API key not found. Please paste your key: ", color='yellow').strip()
+            key = qinput(f"{provider} API key not found. Please paste your key: ", color='yellow', secret=True).strip()
             self._save_secret(provider, key)
             self._secrets[provider] = key
         return self._secrets[provider]

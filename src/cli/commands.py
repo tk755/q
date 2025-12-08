@@ -15,6 +15,7 @@ from termcolor import colored
 from src import __version__
 from src.providers import load_client_class
 from .state import StateManager, Session
+from .terminal import qprint
 from ..agents import ChatAgent
 from ..message import Role
 
@@ -103,13 +104,6 @@ def _format_response(text: str, code_color: str = 'cyan') -> str:
     return text
 
 
-def _print_debug(state: StateManager) -> None:
-    """Print debug information."""
-    print(f"[debug] model: {state.model}", file=sys.stderr)
-    print(f"[debug] session: {state.session_id}", file=sys.stderr)
-    print(f"[debug] messages: {len(state.messages)}", file=sys.stderr)
-
-
 # region Base Classes
 
 class Flag:
@@ -138,28 +132,34 @@ class Command(Flag):
             COMMANDS.append(cls)
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
-        """Execute command with pre/post option handling."""
-        # pre-execute options
+    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+        """Execute command with option handling and output routing."""
+        # pre-agent options
+        if 'v' in parsed_args:
+            pass # TODO: implement verbose logging
         if 'n' in parsed_args:
             state.new_session()
-        if 'v' in parsed_args:
-            _print_debug(state)
 
         # generate response
         response = await cls.generate_response(parsed_args, state)
 
-        # post-execute options
+        if response is None:
+            return
+
+        # post-agent options
         if 'j' not in parsed_args:
             response = _format_response(response)
-        if 'o' in parsed_args and 'i' not in parsed_args:
-            Path(parsed_args['o']).write_text(response)
 
-        return response
+        # output routing
+        if 'o' in parsed_args:
+            Path(parsed_args['o']).write_text(response)
+            qprint(f"Response saved to {parsed_args['o']}", color='yellow', file=sys.stderr)
+        else:
+            qprint(response)
 
     @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
-        """Core command logic. Override in subclasses."""
+    async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str | None:
+        """Generate command response. Return None if command handles its own output."""
         raise NotImplementedError
 
 
@@ -252,19 +252,19 @@ class ImageCommand(Command):
     required = True
 
     @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
+    async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
         system = 'Generate an image of the following description.'
         text = parsed_args[cls.char]
         image = await prompt_agent('ImageClient', system, text, parsed_args, state)
-        return cls.save_image(parsed_args, image)
+        cls.save_image(parsed_args, image)
     
     @classmethod
-    def save_image(cls, parsed_args: ParsedArgs, image: bytes) -> str:
+    def save_image(cls, parsed_args: ParsedArgs, image: bytes) -> None:
         text = parsed_args[cls.char].translate(str.maketrans('', '', string.punctuation)).replace(' ', '_')
         path = parsed_args.get('o') or f'q_{text}'
         path = path if path.lower().endswith('.png') else f'{path}.png'
         Path(path).write_bytes(image)
-        return colored(f'Image saved to {path}.', 'yellow')
+        qprint(f'Image saved to {path}', color='yellow', file=sys.stderr)
 
 
 class RetrievalCommand(Command):
@@ -273,8 +273,8 @@ class RetrievalCommand(Command):
     value_type = ValueType.TEXT
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
-        raise CommandError("Command not implemented yet")
+    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+        raise CommandError(f"-{cls.char} command not yet implemented")
 
 
 class AgentCommand(Command):
@@ -284,8 +284,8 @@ class AgentCommand(Command):
     required = True
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
-        raise CommandError("Command not implemented yet")
+    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+        raise CommandError(f"-{cls.char} command not yet implemented")
 
 
 class UserCommand(Command):
@@ -295,8 +295,8 @@ class UserCommand(Command):
     required = True
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
-        raise CommandError("Command not implemented yet")
+    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+        raise CommandError(f"-{cls.char} command not yet implemented")
 
 class LoadCommand(Command):
     char = 'l'
@@ -304,13 +304,14 @@ class LoadCommand(Command):
     value_type = ValueType.INT
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
+    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
         session_id = parsed_args.get(cls.char)
         if session_id is None:
-            return cls._format_sessions(state.list_sessions())
+            qprint(cls._format_sessions(state.list_sessions()))
+            return
         if not state.load_session(session_id):
             raise CommandError(f"invalid session: {session_id}")
-        return colored(f"loaded session {session_id}", 'yellow')
+        qprint(f"loaded session {session_id}", color='yellow', file=sys.stderr)
 
     @classmethod
     def _format_sessions(cls, sessions: list[Session]) -> str:
@@ -345,10 +346,11 @@ class HelpCommand(Command):
     required = False
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
+    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
         if parsed_args.get(cls.char):
-            return cls._help_prompt()
-        return cls._help_text()
+            qprint(cls._help_prompt())
+        else:
+            qprint(cls._help_text())
 
     @classmethod
     def _help_prompt(cls) -> str:

@@ -13,10 +13,7 @@ class AnthropicClient(Client[T]):
     DEFAULT_MAX_TOKENS = 1024
 
     def _import_sdk(self):
-        try:
-            import anthropic
-        except ImportError:
-            raise ImportError("Anthropic client requires 'anthropic' package.")
+        import anthropic
         self._anthropic = anthropic
 
     def _should_retry(self, error: Exception) -> bool:

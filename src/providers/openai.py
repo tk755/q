@@ -12,10 +12,7 @@ class OpenAIClient(Client[T]):
     """Base client for OpenAI API."""
 
     def _import_sdk(self):
-        try:
-            import openai
-        except ImportError:
-            raise ImportError("OpenAI client requires 'openai' package.")
+        import openai
         self._openai = openai
 
     def _should_retry(self, error: Exception) -> bool:
