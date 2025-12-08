@@ -6,6 +6,7 @@ import platform
 import re
 import string
 import sys
+from abc import ABC, abstractmethod
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ from .session import SessionManager
 from .terminal import qprint
 
 
-class CommandError(Exception):
+class QError(Exception):
     pass
 
 
@@ -35,14 +36,10 @@ def get_default_command() -> type[Command]:
     return TextCommand
 
 
-def get_flag_lookup() -> dict[str, type[Flag]]:
-    return {f.char: f for f in COMMANDS + OPTIONS}
-
-
 # region Types
 
 Value = str | int | None
-ParsedArgs = dict[str, Value]
+ArgMap = dict[str, Value]
 
 
 class ValueType(Enum):
@@ -78,7 +75,7 @@ def _format_response(text: str, code_color: str = "cyan") -> str:
 # region Base Classes
 
 
-class Flag:
+class Flag(ABC):
     """Base class for CLI flags. Subclasses auto-register to OPTIONS."""
 
     char: str
@@ -97,6 +94,9 @@ class Flag:
 class Command(Flag):
     """Base class for CLI commands. Subclasses auto-register to COMMANDS."""
 
+    def __init__(self, args: ArgMap):
+        self.args = args
+
     def __init_subclass__(cls, **kwargs):
         """Move subclass from OPTIONS to COMMANDS if it defines a char."""
         super().__init_subclass__(**kwargs)
@@ -104,48 +104,45 @@ class Command(Flag):
             OPTIONS.remove(cls)
             COMMANDS.append(cls)
 
-    @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
-        """Execute command."""
+    @abstractmethod
+    async def execute(self) -> None: ...
 
 
 class AgentCommand(Command):
     """Base class for commands that prompt an agent."""
 
-    @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
+    async def execute(self) -> None:
         # pre-agent options
-        if "v" in parsed_args:
+        if "v" in self.args:
             pass  # TODO
-        if "n" in parsed_args:
+        if "n" in self.args:
             SessionManager.new_session()
 
         # generate response
-        response = await cls.generate_response(parsed_args)
+        response = await self.generate_response()
 
         if response is None:
             return
 
         # post-agent options
-        if "j" not in parsed_args:
+        if "j" not in self.args:
             response = _format_response(response)
 
         # output routing
-        if "o" in parsed_args:
-            Path(parsed_args["o"]).write_text(response)
-            qprint(f"Response saved to {parsed_args['o']}", color="yellow", file=sys.stderr)
+        if "o" in self.args:
+            Path(self.args["o"]).write_text(response)
+            qprint(f"Response saved to {self.args['o']}", color="yellow", file=sys.stderr)
         else:
             qprint(response)
 
-    @classmethod
-    async def prompt_agent(cls, client_str: str, system: str | None, parsed_args: ParsedArgs) -> Any:
+    async def prompt_agent(self, client_str: str, system: str | None) -> Any:
         """Create and prompt an agent."""
         # resolve provider and model
         model_path = SessionManager.load_model()
         if "/" not in model_path:
-            raise CommandError(f"invalid model in config: '{model_path}' (expected provider/model)")
-        if "m" in parsed_args:
-            model_arg = parsed_args["m"]
+            raise QError(f"invalid model in config: '{model_path}' (expected provider/model)")
+        if "m" in self.args:
+            model_arg = self.args["m"]
             if "/" in model_arg:
                 model_path = model_arg
             else:
@@ -160,17 +157,16 @@ class AgentCommand(Command):
 
         # create agent
         agent = ChatAgent(client, system, SessionManager.load_messages())
-        if "z" in parsed_args:
-            agent.drop_exchanges(parsed_args["z"])
+        if "z" in self.args:
+            agent.drop_exchanges(self.args["z"])
 
         # prompt agent and save messages
-        response = await agent.prompt(parsed_args[cls.char])
+        response = await agent.prompt(self.args[self.char])
         SessionManager.save_messages(agent.messages)
         return response
 
-    @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs) -> str | None:
-        """Generate command response. Return None if command handles its own output."""
+    @abstractmethod
+    async def generate_response(self) -> str | None: ...
 
 
 # region Commands
@@ -182,9 +178,8 @@ class TextCommand(AgentCommand):
     value_type = ValueType.TEXT
     required = True
 
-    @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs) -> str:
-        return await cls.prompt_agent("TextClient", None, parsed_args)
+    async def generate_response(self) -> str:
+        return await self.prompt_agent("TextClient", None)
 
 
 class ExplainCommand(AgentCommand):
@@ -192,10 +187,9 @@ class ExplainCommand(AgentCommand):
     desc = "explain"
     value_type = ValueType.TEXT
 
-    @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs) -> str:
+    async def generate_response(self) -> str:
         system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
-        return await cls.prompt_agent("TextClient", system, parsed_args)
+        return await self.prompt_agent("TextClient", system)
 
 
 class CodeCommand(AgentCommand):
@@ -204,10 +198,9 @@ class CodeCommand(AgentCommand):
     value_type = ValueType.TEXT
     required = True
 
-    @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs) -> str:
+    async def generate_response(self) -> str:
         system = f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Assume the programming language is {SessionManager.load_code_lang()} unless otherwise specified."
-        return await cls.prompt_agent("TextClient", system, parsed_args)
+        return await self.prompt_agent("TextClient", system)
 
 
 class ShellCommand(AgentCommand):
@@ -216,13 +209,11 @@ class ShellCommand(AgentCommand):
     value_type = ValueType.TEXT
     required = True
 
-    @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs) -> str:
-        system = f"You are a command-line assistant. Given a description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. System is running {cls._get_system_info()}."
-        return await cls.prompt_agent("TextClient", system, parsed_args)
+    async def generate_response(self) -> str:
+        system = f"You are a command-line assistant. Given a description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. System is running {self._get_system_info()}."
+        return await self.prompt_agent("TextClient", system)
 
-    @classmethod
-    def _get_system_info(cls) -> str:
+    def _get_system_info(self) -> str:
         shell = os.environ.get("SHELL") or os.environ.get("COMSPEC")
         shell = Path(shell).name if shell else ""
 
@@ -242,10 +233,9 @@ class WebCommand(AgentCommand):
     value_type = ValueType.TEXT
     required = True
 
-    @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs) -> str:
+    async def generate_response(self) -> str:
         system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence. Always search the internet."
-        return await cls.prompt_agent("WebClient", system, parsed_args)
+        return await self.prompt_agent("WebClient", system)
 
 
 class ImageCommand(AgentCommand):
@@ -254,16 +244,14 @@ class ImageCommand(AgentCommand):
     value_type = ValueType.TEXT
     required = True
 
-    @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs) -> None:
+    async def generate_response(self) -> None:
         system = "Generate an image given a description."
-        image = await cls.prompt_agent("ImageClient", system, parsed_args)
-        cls.save_image(parsed_args, image)
+        image = await self.prompt_agent("ImageClient", system)
+        self.save_image(image)
 
-    @classmethod
-    def save_image(cls, parsed_args: ParsedArgs, image: bytes) -> None:
-        text = parsed_args[cls.char].translate(str.maketrans("", "", string.punctuation)).replace(" ", "_")
-        path = parsed_args.get("o") or f"q_{text}"
+    def save_image(self, image: bytes) -> None:
+        text = self.args[self.char].translate(str.maketrans("", "", string.punctuation)).replace(" ", "_")
+        path = self.args.get("o") or f"q_{text}"
         path = path if path.lower().endswith(".png") else f"{path}.png"
         Path(path).write_bytes(image)
         qprint(f"Image saved to {path}", color="yellow", file=sys.stderr)
@@ -274,9 +262,8 @@ class RetrievalCommand(Command):
     desc = "retrieval"
     value_type = ValueType.TEXT
 
-    @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
-        raise CommandError(f"-{cls.char} not yet implemented")
+    async def execute(self) -> None:
+        raise QError(f"-{self.char} not yet implemented")
 
 
 class AutoCommand(Command):
@@ -285,9 +272,8 @@ class AutoCommand(Command):
     value_type = ValueType.TEXT
     required = True
 
-    @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
-        raise CommandError(f"-{cls.char} not yet implemented")
+    async def execute(self) -> None:
+        raise QError(f"-{self.char} not yet implemented")
 
 
 class UserCommand(Command):
@@ -296,9 +282,8 @@ class UserCommand(Command):
     value_type = ValueType.STR
     required = True
 
-    @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
-        raise CommandError(f"-{cls.char} not yet implemented")
+    async def execute(self) -> None:
+        raise QError(f"-{self.char} not yet implemented")
 
 
 class LoadCommand(Command):
@@ -306,14 +291,13 @@ class LoadCommand(Command):
     desc = "load session"
     value_type = ValueType.INT
 
-    @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
-        session_id = parsed_args.get(cls.char)
+    async def execute(self) -> None:
+        session_id = self.args.get(self.char)
         if session_id is None:
             qprint(SessionManager.format_session_list())
             return
         if not SessionManager.switch_session(session_id):
-            raise CommandError(f"invalid session: {session_id}")
+            raise QError(f"invalid session: {session_id}")
         qprint(f"Loaded session {session_id}", color="yellow", file=sys.stderr)
 
 
@@ -323,19 +307,16 @@ class HelpCommand(Command):
     value_type = ValueType.TEXT
     required = False
 
-    @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
-        if parsed_args.get(cls.char):
-            qprint(cls._help_prompt())
+    async def execute(self) -> None:
+        if self.args.get(self.char):
+            qprint(self._help_prompt())
         else:
-            qprint(cls._help_text())
+            qprint(self._help_text())
 
-    @classmethod
-    def _help_prompt(cls) -> str:
-        raise CommandError("-h <text> not yet implemented")
+    def _help_prompt(self) -> str:
+        raise QError("-h <text> not yet implemented")
 
-    @classmethod
-    def _help_text(cls) -> str:
+    def _help_text(self) -> str:
         usage_color = "green"
         command_color = "cyan"
         option_color = "dark_grey"
