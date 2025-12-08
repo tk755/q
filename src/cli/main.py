@@ -3,16 +3,13 @@ import sys
 
 from .commands import CommandError
 from .parser import ParseError, parse
-from .state import StateManager
 from .terminal import qprint
 
 
 def main():
     try:
         command, parsed_args = parse(sys.argv[1:])
-        state = StateManager()
-        asyncio.run(command.dispatch(parsed_args, state))
-        state.save()
+        asyncio.run(command.dispatch(parsed_args))
 
     except (ParseError, CommandError, ImportError) as e:
         qprint(str(e), color="red", file=sys.stderr)

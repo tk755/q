@@ -4,7 +4,6 @@ import contextlib
 import os
 import platform
 import re
-import shutil
 import string
 import sys
 from enum import Enum, auto
@@ -12,15 +11,13 @@ from pathlib import Path
 from typing import Any
 
 import distro
-import humanize
 from termcolor import colored
 
 from src import __version__
 from src.providers import load_client_class
 
 from ..agents import ChatAgent
-from ..message import Role
-from .state import Session, StateManager
+from .session import SessionManager
 from .terminal import qprint
 
 
@@ -108,7 +105,7 @@ class Command(Flag):
             COMMANDS.append(cls)
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
         """Execute command."""
 
 
@@ -116,15 +113,15 @@ class AgentCommand(Command):
     """Base class for commands that prompt an agent."""
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
         # pre-agent options
         if "v" in parsed_args:
             pass  # TODO
         if "n" in parsed_args:
-            state.new_session()
+            SessionManager.new_session()
 
         # generate response
-        response = await cls.generate_response(parsed_args, state)
+        response = await cls.generate_response(parsed_args)
 
         if response is None:
             return
@@ -141,12 +138,10 @@ class AgentCommand(Command):
             qprint(response)
 
     @classmethod
-    async def prompt_agent(
-        cls, client_str: str, system: str | None, parsed_args: ParsedArgs, state: StateManager
-    ) -> Any:
+    async def prompt_agent(cls, client_str: str, system: str | None, parsed_args: ParsedArgs) -> Any:
         """Create and prompt an agent."""
         # resolve provider and model
-        model_path = state.model
+        model_path = SessionManager.load_model()
         if "/" not in model_path:
             raise CommandError(f"invalid model in config: '{model_path}' (expected provider/model)")
         if "m" in parsed_args:
@@ -160,21 +155,21 @@ class AgentCommand(Command):
 
         # dynamically create client
         client_class = load_client_class(provider, client_str)
-        api_key = state.get_api_key(provider)
+        api_key = SessionManager.load_api_key(provider)
         client = client_class(api_key, model)
 
         # create agent
-        agent = ChatAgent(client, system, state.messages)
+        agent = ChatAgent(client, system, SessionManager.load_messages())
         if "z" in parsed_args:
             agent.drop_exchanges(parsed_args["z"])
 
-        # prompt agent and update state
+        # prompt agent and save messages
         response = await agent.prompt(parsed_args[cls.char])
-        state.messages = agent.messages
+        SessionManager.save_messages(agent.messages)
         return response
 
     @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str | None:
+    async def generate_response(cls, parsed_args: ParsedArgs) -> str | None:
         """Generate command response. Return None if command handles its own output."""
 
 
@@ -188,8 +183,8 @@ class TextCommand(AgentCommand):
     required = True
 
     @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
-        return await cls.prompt_agent("TextClient", None, parsed_args, state)
+    async def generate_response(cls, parsed_args: ParsedArgs) -> str:
+        return await cls.prompt_agent("TextClient", None, parsed_args)
 
 
 class ExplainCommand(AgentCommand):
@@ -198,9 +193,9 @@ class ExplainCommand(AgentCommand):
     value_type = ValueType.TEXT
 
     @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
+    async def generate_response(cls, parsed_args: ParsedArgs) -> str:
         system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
-        return await cls.prompt_agent("TextClient", system, parsed_args, state)
+        return await cls.prompt_agent("TextClient", system, parsed_args)
 
 
 class CodeCommand(AgentCommand):
@@ -210,9 +205,9 @@ class CodeCommand(AgentCommand):
     required = True
 
     @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
-        system = f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Assume the programming language is {state.code_lang} unless otherwise specified."
-        return await cls.prompt_agent("TextClient", system, parsed_args, state)
+    async def generate_response(cls, parsed_args: ParsedArgs) -> str:
+        system = f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Assume the programming language is {SessionManager.load_code_lang()} unless otherwise specified."
+        return await cls.prompt_agent("TextClient", system, parsed_args)
 
 
 class ShellCommand(AgentCommand):
@@ -222,9 +217,9 @@ class ShellCommand(AgentCommand):
     required = True
 
     @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
+    async def generate_response(cls, parsed_args: ParsedArgs) -> str:
         system = f"You are a command-line assistant. Given a description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. System is running {cls._get_system_info()}."
-        return await cls.prompt_agent("TextClient", system, parsed_args, state)
+        return await cls.prompt_agent("TextClient", system, parsed_args)
 
     @classmethod
     def _get_system_info(cls) -> str:
@@ -248,9 +243,9 @@ class WebCommand(AgentCommand):
     required = True
 
     @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> str:
+    async def generate_response(cls, parsed_args: ParsedArgs) -> str:
         system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence. Always search the internet."
-        return await cls.prompt_agent("WebClient", system, parsed_args, state)
+        return await cls.prompt_agent("WebClient", system, parsed_args)
 
 
 class ImageCommand(AgentCommand):
@@ -260,9 +255,9 @@ class ImageCommand(AgentCommand):
     required = True
 
     @classmethod
-    async def generate_response(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+    async def generate_response(cls, parsed_args: ParsedArgs) -> None:
         system = "Generate an image given a description."
-        image = await cls.prompt_agent("ImageClient", system, parsed_args, state)
+        image = await cls.prompt_agent("ImageClient", system, parsed_args)
         cls.save_image(parsed_args, image)
 
     @classmethod
@@ -280,7 +275,7 @@ class RetrievalCommand(Command):
     value_type = ValueType.TEXT
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
         raise CommandError(f"-{cls.char} not yet implemented")
 
 
@@ -291,7 +286,7 @@ class AutoCommand(Command):
     required = True
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
         raise CommandError(f"-{cls.char} not yet implemented")
 
 
@@ -302,7 +297,7 @@ class UserCommand(Command):
     required = True
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
         raise CommandError(f"-{cls.char} not yet implemented")
 
 
@@ -312,36 +307,14 @@ class LoadCommand(Command):
     value_type = ValueType.INT
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
         session_id = parsed_args.get(cls.char)
         if session_id is None:
-            cls._print_sessions(state.list_sessions(), state.session_id)
+            qprint(SessionManager.format_session_list())
             return
-        if not state.load_session(session_id):
+        if not SessionManager.switch_session(session_id):
             raise CommandError(f"invalid session: {session_id}")
         qprint(f"Loaded session {session_id}", color="yellow", file=sys.stderr)
-
-    @classmethod
-    def _print_sessions(cls, sessions: list[Session], current_id: int) -> None:
-        if not sessions:
-            qprint("No sessions found.")
-            return
-
-        term_width = shutil.get_terminal_size().columns
-        for s in sessions:
-            age = humanize.naturaltime(s.updated) if s.updated else "unknown"
-            prefix_len = len(f"    {s.id}.  ")
-            suffix_len = len(f" ({age})")
-            max_len = max(20, term_width - prefix_len - suffix_len - 5)  # at least -3 for ellipsis
-
-            preview = "(empty)"
-            for msg in reversed(s.messages):
-                if msg.role == Role.USER:
-                    preview = msg.content[:max_len] + "..." if len(msg.content) > max_len else msg.content
-                    break
-
-            line = f"    {s.id}.  {preview} ({age})"
-            qprint(line if s.id == current_id else colored(line, "dark_grey"))
 
 
 class HelpCommand(Command):
@@ -351,7 +324,7 @@ class HelpCommand(Command):
     required = False
 
     @classmethod
-    async def dispatch(cls, parsed_args: ParsedArgs, state: StateManager) -> None:
+    async def dispatch(cls, parsed_args: ParsedArgs) -> None:
         if parsed_args.get(cls.char):
             qprint(cls._help_prompt())
         else:
