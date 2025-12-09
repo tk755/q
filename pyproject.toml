@@ -3,22 +3,23 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "q-bot"
+name = "q-agent"
 dynamic = ["version"]
-description = "An LLM-powered programming copilot from the comfort of your command line"
-requires-python = ">=3.8"
+description = "An LLM agent from the comfort of your command line"
+requires-python = ">=3.12"
 dependencies = [
+    "anthropic==0.75.0",
     "colorama==0.4.6",
     "distro==1.9.0",
-    "humanize==4.11.0",
-    "openai==1.82.0",
-    "pyperclip==1.9.0",
-    "python-dotenv==1.0.1",
-    "termcolor==2.5.0",
-    "toml==0.10.2",
+    "humanize==4.14.0",
+    "openai==2.9.0",
+    "pydantic==2.12.5",
+    "pyperclip==1.11.0",
+    "python-dotenv==1.2.1",
+    "termcolor==3.2.0",
 ]
 authors = [
-    {name = "Tushar Khan", email = "tushar.54k@gmail.com"}
+    {name = "Tushar Khan", email = "tk@tusharkhan.com"}
 ]
 readme = "README.md"
 license = "MIT"
@@ -31,5 +32,3 @@ Repository = "https://github.com/tk755/q"
 
 [tool.setuptools.dynamic]
 version = {attr = "q.__version__"}
-
-

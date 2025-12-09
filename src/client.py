@@ -1,19 +1,16 @@
 import asyncio
 import random
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from .message import Message
-
-T = TypeVar("T")
-
 
 MAX_RETRIES = 3
 BACKOFF_FACTOR = 2.0
 MAX_JITTER = 0.1
 
 
-class Client(ABC, Generic[T]):
+class Client[T](ABC):
     """Base client for LLM providers."""
 
     def __init__(self, api_key: str, model: str, **model_args):
@@ -44,7 +41,7 @@ class Client(ABC, Generic[T]):
         """Make API call and return output."""
 
     @abstractmethod
-    def _import_sdk(self):
+    def _import_sdk(self) -> None:
         """Import provider SDK lazily to avoid loading unused dependencies."""
 
     @abstractmethod

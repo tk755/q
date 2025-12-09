@@ -1,16 +1,14 @@
 import base64
-from typing import Any, TypeVar
+from typing import Any
 
 from ..client import Client
 from ..message import Message
 
-T = TypeVar("T")
 
-
-class OpenAIClient(Client[T]):
+class OpenAIClient[T](Client[T]):
     """Base client for OpenAI API."""
 
-    def _import_sdk(self):
+    def _import_sdk(self) -> None:
         import openai
 
         self._openai = openai
@@ -36,11 +34,11 @@ class OpenAIClient(Client[T]):
     def _create_async_client(self) -> Any:
         return self._openai.AsyncOpenAI(api_key=self.api_key)
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict]:
+    def _convert_messages(self, messages: list[Message]) -> list[dict[str, str]]:
         return [msg.model_dump(include={"role", "content"}) for msg in messages]
 
     @property
-    def tools(self) -> list[dict] | None:
+    def tools(self) -> list[dict[str, str]] | None:
         return None
 
     async def _generate(self, messages: list[Message]) -> T:
@@ -65,7 +63,7 @@ class WebClient(OpenAIClient[str]):
         super().__init__(api_key, model, **model_args)
 
     @property
-    def tools(self) -> list[dict]:
+    def tools(self) -> list[dict[str, str]]:
         return [{"type": "web_search_preview", "search_context_size": self._search_context_size}]
 
 
@@ -76,7 +74,7 @@ class ImageClient(OpenAIClient[bytes]):
         super().__init__(api_key, model, **model_args)
 
     @property
-    def tools(self) -> list[dict]:
+    def tools(self) -> list[dict[str, str]]:
         return [{"type": "image_generation", "size": self._size, "quality": self._quality}]
 
     def _extract(self, response: Any) -> bytes:

@@ -35,8 +35,8 @@ def get_default_command() -> type[Command]:
 
 # region Types
 
-Value = str | int | None
-ArgMap = dict[str, Value]
+type Value = str | int | None
+type ArgMap = dict[str, Value]
 
 
 class ValueType(Enum):
@@ -145,7 +145,7 @@ class ExplainCommand(AgentCommand):
     char = "e"
     desc = "explain"
     value_type = ValueType.TEXT
-    tier = Tier.MINI
+    tier = Tier.FULL
     system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
 
 
@@ -191,7 +191,7 @@ class WebCommand(AgentCommand):
     desc = "web"
     value_type = ValueType.TEXT
     required = True
-    tier = Tier.FULL
+    tier = Tier.MINI
     client_str = "WebClient"
     system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence. Always search the internet."
 
@@ -361,8 +361,9 @@ class JsonOption(Flag):
 
 class ModelOption(Flag):
     char = "m"
-    desc = "model (tier|provider|provider:tier|provider:model)"
+    desc = "model"
     value_type = ValueType.STR
+    required = True
 
 
 class NewSessionOption(Flag):

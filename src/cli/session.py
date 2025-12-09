@@ -1,6 +1,7 @@
+import contextlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import dotenv_values, set_key
@@ -85,7 +86,7 @@ class SessionManager:
         """Creates or updates active session with system prompt and messages."""
         session_id = cls._read_config().current_session_id
         session = cls._read_session(session_id)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         if session is None:
             session = Session(id=session_id, system=system, messages=messages, created=now, updated=now)
@@ -155,10 +156,8 @@ class SessionManager:
         cls._ensure_dirs()
         raw = {}
         if CONFIG_PATH.exists():
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 raw = json.loads(CONFIG_PATH.read_text())
-            except json.JSONDecodeError:
-                pass
         raw["current_session_id"] = session_id
         CONFIG_PATH.write_text(json.dumps(raw, indent=2))
 

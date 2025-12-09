@@ -1,3 +1,4 @@
+import contextlib
 from enum import Enum
 
 from .terminal import UserError
@@ -41,18 +42,15 @@ def resolve_model_arg(arg: str | None, default_tier: Tier, default_provider: str
     # provider:value
     if ":" in arg:
         provider, value = arg.split(":", 1)
-        try:
+        with contextlib.suppress(ValueError):
             # provider:tier (e.g. "openai:deep")
             return _lookup(provider, Tier(value))
-        except ValueError:
-            # provider:model (e.g. "openai:gpt-5-pro")
-            return provider, value, {}
+        # provider:model (e.g. "openai:gpt-5-pro")
+        return provider, value, {}
 
     # tier (e.g. "deep")
-    try:
+    with contextlib.suppress(ValueError):
         return _lookup(default_provider, Tier(arg))
-    except ValueError:
-        pass
 
     # provider (e.g. "openai")
     if arg in MODELS:

@@ -1,17 +1,15 @@
-from typing import Any, TypeVar
+from typing import Any
 
 from ..client import Client
 from ..message import Message, Role
 
-T = TypeVar("T")
 
-
-class AnthropicClient(Client[T]):
+class AnthropicClient[T](Client[T]):
     """Base client for Anthropic API."""
 
     DEFAULT_MAX_TOKENS = 1024
 
-    def _import_sdk(self):
+    def _import_sdk(self) -> None:
         import anthropic
 
         self._anthropic = anthropic
@@ -37,7 +35,7 @@ class AnthropicClient(Client[T]):
     def _create_async_client(self) -> Any:
         return self._anthropic.AsyncAnthropic(api_key=self.api_key)
 
-    def _default_model_args(self) -> dict:
+    def _default_model_args(self) -> dict[str, Any]:
         """Get missing model args required by API."""
         args = dict(self.model_args)
         if "max_tokens" not in args:

@@ -1,13 +1,10 @@
 import asyncio
-from typing import Generic, TypeVar
 
 from .client import Client
 from .message import Message, Role
 
-T = TypeVar("T")
 
-
-class ChatAgent(Generic[T]):
+class ChatAgent[T]:
     """Conversational agent with persistent message history."""
 
     def __init__(self, client: Client[T], system: str | None = None, messages: list[Message] | None = None):
@@ -43,7 +40,7 @@ class ChatAgent(Generic[T]):
                     return
 
 
-class BatchAgent(Generic[T]):
+class BatchAgent[T]:
     """Batch agent for applying a single prompt to multiple inputs concurrently."""
 
     def __init__(self, client: Client[T], system: str | None = None):
