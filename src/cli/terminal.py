@@ -9,21 +9,22 @@ from termcolor import colored
 just_fix_windows_console()
 
 
-def _sanitize_text(text: str) -> str:
-    """Prepare text for printing, stripping ANSI codes for non-terminals."""
-    # check if output is a terminal
-    if sys.stdout.isatty():
-        return text
+def is_terminal() -> bool:
+    """Check if the output is a terminal."""
+    return sys.stdout.isatty()
 
-    # strip ANSI color codes
+
+def strip_ansi(text: str) -> str:
+    """Strip ANSI color codes from text."""
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 def qprint(*values: str, color: str | None = None, **kwargs):
     """Print values, stripping ANSI codes for non-terminals."""
     if color:
-        values = [colored(v, color) for v in values]
-    values = [_sanitize_text(v) for v in values]
+        values = tuple(colored(v, color) for v in values)
+    if not is_terminal():
+        values = tuple(strip_ansi(v) for v in values)
     print(*values, **kwargs)
 
 
@@ -31,9 +32,11 @@ def qinput(text: str = "", color: str | None = None, secret: bool = False) -> st
     """Prompt user for input. No echo if secret=True."""
     if color:
         text = colored(text, color)
+    if not is_terminal():
+        text = strip_ansi(text)
     if secret:
-        return getpass.getpass(_sanitize_text(text))
-    return input(_sanitize_text(text))
+        return getpass.getpass(text)
+    return input(text)
 
 
 def format_response(text: str, code_color: str = "cyan") -> str:
@@ -47,10 +50,11 @@ def format_response(text: str, code_color: str = "cyan") -> str:
     # remove formatting from response-level code blocks
     text = re.sub(r"^```.*?\n(.*)\n```$", r"\1", text, flags=re.DOTALL)
 
-    # convert code blocks into colored text
-    text = re.sub(r"```(?:\w+\n?)?(.*?)```", lambda m: colored(m.group(1).strip(), code_color), text, flags=re.DOTALL)
+    if is_terminal():
+        # convert code blocks into colored text
+        text = re.sub(r"```(?:\w+\n?)?(.*?)```", lambda m: colored(m.group(1).strip(), code_color), text, flags=re.DOTALL)
 
-    # convert inline-code into colored text
-    text = re.sub(r"`([^`]+)`", lambda m: colored(m.group(1), code_color), text)
+        # convert inline-code into colored text
+        text = re.sub(r"`([^`]+)`", lambda m: colored(m.group(1), code_color), text)
 
     return text

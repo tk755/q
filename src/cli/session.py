@@ -27,6 +27,7 @@ class Session(BaseModel):
     """Conversation session with message history."""
 
     id: int
+    system: str | None = None
     messages: list[Message] = Field(default_factory=list)
     created: datetime | None = None
     updated: datetime | None = None
@@ -65,7 +66,13 @@ class SessionManager:
 
         return secrets[provider_lower]
 
-    # Messages
+    # Session data
+
+    @classmethod
+    def load_system(cls) -> str | None:
+        """Load system prompt from active session."""
+        session = cls._read_session(cls._read_config().current_session_id)
+        return session.system if session else None
 
     @classmethod
     def load_messages(cls) -> list[Message] | None:
@@ -74,15 +81,16 @@ class SessionManager:
         return session.messages if session else None
 
     @classmethod
-    def save_messages(cls, messages: list[Message]) -> None:
-        """Creates or updates active session with messages."""
+    def save_session(cls, system: str | None, messages: list[Message]) -> None:
+        """Creates or updates active session with system prompt and messages."""
         session_id = cls._read_config().current_session_id
         session = cls._read_session(session_id)
         now = datetime.now(timezone.utc)
 
         if session is None:
-            session = Session(id=session_id, messages=messages, created=now, updated=now)
+            session = Session(id=session_id, system=system, messages=messages, created=now, updated=now)
         else:
+            session.system = system
             session.messages = messages
             session.updated = now
 
@@ -118,7 +126,7 @@ class SessionManager:
 
     @classmethod
     def new_session(cls) -> None:
-        """Create new session ID. Session file created on save_messages()."""
+        """Create new session ID. Session file created on save_session()."""
         cls._ensure_dirs()
         existing = [int(p.stem) for p in SESSIONS_DIR.glob("*.json") if p.stem.isdigit()]
         cls._save_active_session_id(max(existing, default=0) + 1)

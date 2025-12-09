@@ -12,17 +12,18 @@ class ChatAgent(Generic[T]):
 
     def __init__(self, client: Client[T], system: str | None = None, messages: list[Message] | None = None):
         self.client = client
+        self.system = system
         self.messages: list[Message] = messages.copy() if messages else []
-
-        if system:
-            self.messages.append(Message(role=Role.SYSTEM, content=system))
 
     async def prompt(self, text: str) -> T:
         """Generate response and update conversation history."""
         self.messages.append(Message(role=Role.USER, content=text))
-        response = await self.client.generate(self.messages)
 
-        # only add to history if response is a string
+        messages = self.messages
+        if self.system:
+            messages = [Message(role=Role.SYSTEM, content=self.system), *self.messages]
+        response = await self.client.generate(messages)
+
         if isinstance(response, str):
             self.messages.append(Message(role=Role.ASSISTANT, content=response))
 

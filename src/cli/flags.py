@@ -20,7 +20,7 @@ from src.providers import load_client_class
 from ..agents import ChatAgent
 from ..message import Role
 from .session import SessionManager
-from .terminal import format_response, qprint
+from .terminal import format_response, qprint, strip_ansi
 
 
 class QError(Exception):
@@ -116,14 +116,17 @@ class AgentCommand(Command):
         api_key = SessionManager.load_api_key(provider)
         client = client_class(api_key, model)
 
+        # resolve system prompt (command's system overrides saved system)
+        system = self.system if self.system is not None else SessionManager.load_system()
+
         # create agent
-        agent = ChatAgent(client, self.system, SessionManager.load_messages())
+        agent = ChatAgent(client, system, SessionManager.load_messages())
         if "z" in self.args:
             agent.drop_exchanges(self.args["z"])
 
         # prompt agent and save session
         response = await agent.prompt(self.args[self.char])
-        SessionManager.save_messages(agent.messages)
+        SessionManager.save_session(agent.system, agent.messages)
 
         # process response
         self.process_response(response)
@@ -216,33 +219,53 @@ class ImageCommand(AgentCommand):
         qprint(f"Image saved to {path}", color="yellow", file=sys.stderr)
 
 
-class RetrievalCommand(Command):
-    char = "r"
-    desc = "retrieval"
+class HelpCommand(AgentCommand):
+    char = "h"
+    desc = "help"
     value_type = ValueType.TEXT
+    required = False
+
+    @property
+    def system(self) -> str:
+        cli_dir = Path(__file__).parent
+        sources = {name: (cli_dir / name).read_text() for name in ["flags.py", "parser.py", "session.py", "terminal.py", "main.py"]}
+        source_blocks = "\n\n".join(f"{name}:\n```python\n{src}\n```" for name, src in sources.items())
+
+        return (
+            "You are q, a command-line LLM tool. A user is asking for help. Answer based on your own source code below.\n\n"
+            f"{source_blocks}\n\n"
+            "Be concise. Show example commands when helpful."
+        )
 
     async def execute(self) -> None:
-        raise QError(f"-{self.char} not yet implemented")
+        if self.args.get(self.char):
+            await super().execute()
+        else:
+            qprint(self._help_text())
 
+    def _help_text(self) -> str:
+        command_color = "cyan"
+        flags = []
+        for f in sorted(COMMANDS + OPTIONS, key=lambda f: f.char):
+            flag_arg = f.value_type.value or ""
+            if flag_arg:
+                flag_arg = f"<{flag_arg}>" if f.required else f"[{flag_arg}]"
+            flag_str = f"    -{f.char}  {f.desc} {flag_arg}"
+            flags.append(colored(flag_str, command_color if f in COMMANDS else "dark_grey"))
 
-class AutoCommand(Command):
-    char = "a"
-    desc = "auto"
-    value_type = ValueType.TEXT
-    required = True
-
-    async def execute(self) -> None:
-        raise QError(f"-{self.char} not yet implemented")
-
-
-class UserCommand(Command):
-    char = "u"
-    desc = "user command"
-    value_type = ValueType.STR
-    required = True
-
-    async def execute(self) -> None:
-        raise QError(f"-{self.char} not yet implemented")
+        lines = [
+            f"q {__version__} - a command line programming agent",
+            "",
+            f"Usage: q [-flag [value]] ...",
+            "",
+            "  Flags can be combined: -sx = -s -x",
+            "  Use -- to disable remaining flag parsing.",
+            f"  One {colored('command', command_color)} is required.",
+            "",
+            "Flags:",
+            *flags,
+        ]
+        return "\n".join(lines)
 
 
 class LoadCommand(Command):
@@ -285,47 +308,33 @@ class LoadCommand(Command):
             qprint(line, color=color)
 
 
-class HelpCommand(Command):
-    char = "h"
-    desc = "help"
+class RetrievalCommand(Command):
+    char = "r"
+    desc = "retrieval"
     value_type = ValueType.TEXT
-    required = False
 
     async def execute(self) -> None:
-        if self.args.get(self.char):
-            self._print_help_prompt()
-        else:
-            self._print_help()
+        raise QError(f"-{self.char} not yet implemented")
 
-    def _print_help_prompt(self) -> None:
-        raise QError("-h <text> not yet implemented")
 
-    def _print_help(self) -> None:
-        usage_color = "green"
-        command_color = "cyan"
-        option_color = "dark_grey"
+class AutoCommand(Command):
+    char = "a"
+    desc = "auto"
+    value_type = ValueType.TEXT
+    required = True
 
-        flags = []
-        for f in sorted(COMMANDS + OPTIONS, key=lambda f: f.char):
-            flag_arg = f.value_type.value or ""
-            if flag_arg:
-                flag_arg = f"<{flag_arg}>" if f.required else f"[{flag_arg}]"
+    async def execute(self) -> None:
+        raise QError(f"-{self.char} not yet implemented")
 
-            flag_str = f"-{f.char}  {f.desc} {flag_arg}"
-            flag_fmt = colored(flag_str, command_color if f in COMMANDS else option_color)
-            flags.append(f"    {flag_fmt:<{10}}")
 
-        qprint(f"q {__version__} - a command line programming agent")
-        qprint()
-        qprint("Usage:", colored("q [-flag [value]] ...", usage_color))
-        qprint()
-        qprint("  Flags can be combined: -sx = -s -x")
-        qprint("  Use -- to disable remaining flag parsing.")
-        qprint("  One", colored("command", command_color), "is required.")
-        qprint()
-        qprint("Flags:")
-        for flag in flags:
-            qprint(flag)
+class UserCommand(Command):
+    char = "u"
+    desc = "user command"
+    value_type = ValueType.STR
+    required = True
+
+    async def execute(self) -> None:
+        raise QError(f"-{self.char} not yet implemented")
 
 
 # region Options
