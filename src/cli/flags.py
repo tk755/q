@@ -19,13 +19,9 @@ from src.providers import load_client_class
 
 from ..agents import ChatAgent
 from ..message import Role
+from .models import QError, Tier, resolve_model_arg
 from .session import SessionManager
-from .terminal import format_response, qprint, strip_ansi
-
-
-class QError(Exception):
-    pass
-
+from .terminal import format_response, qprint
 
 # region Registry
 
@@ -90,6 +86,7 @@ class AgentCommand(Command):
     """Base class for commands that prompt an agent."""
 
     client_str: str = "TextClient"
+    tier: Tier
     system: str | None = None
 
     async def execute(self) -> None:
@@ -98,23 +95,14 @@ class AgentCommand(Command):
         if "n" in self.args:
             SessionManager.new_session()
 
-        # resolve provider and model
-        model_path = SessionManager.load_model()
-        if "/" not in model_path:
-            raise QError(f"invalid model in config: '{model_path}' (expected provider/model)")
-        if "m" in self.args:
-            model_arg = self.args["m"]
-            if "/" in model_arg:
-                model_path = model_arg
-            else:
-                provider = model_path.split("/")[0]
-                model_path = f"{provider}/{model_arg}"
-        provider, model = model_path.split("/", 1)
+        # resolve provider, model, and model args
+        default_provider = SessionManager.load_default_provider()
+        provider, model, model_args = resolve_model_arg(self.args.get("m"), self.tier, default_provider)
 
         # create client dynamically
         client_class = load_client_class(provider, self.client_str)
         api_key = SessionManager.load_api_key(provider)
-        client = client_class(api_key, model)
+        client = client_class(api_key, model, **model_args)
 
         # resolve system prompt (command's system overrides saved system)
         system = self.system if self.system is not None else SessionManager.load_system()
@@ -150,12 +138,14 @@ class TextCommand(AgentCommand):
     desc = "text"
     value_type = ValueType.TEXT
     required = True
+    tier = Tier.FULL
 
 
 class ExplainCommand(AgentCommand):
     char = "e"
     desc = "explain"
     value_type = ValueType.TEXT
+    tier = Tier.MINI
     system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
 
 
@@ -164,6 +154,7 @@ class CodeCommand(AgentCommand):
     desc = "code"
     value_type = ValueType.TEXT
     required = True
+    tier = Tier.FULL
 
     @property
     def system(self) -> str:
@@ -175,6 +166,7 @@ class ShellCommand(AgentCommand):
     desc = "shell"
     value_type = ValueType.TEXT
     required = True
+    tier = Tier.MINI
 
     @property
     def system(self) -> str:
@@ -199,6 +191,7 @@ class WebCommand(AgentCommand):
     desc = "web"
     value_type = ValueType.TEXT
     required = True
+    tier = Tier.FULL
     client_str = "WebClient"
     system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence. Always search the internet."
 
@@ -208,6 +201,7 @@ class ImageCommand(AgentCommand):
     desc = "image"
     value_type = ValueType.TEXT
     required = True
+    tier = Tier.FULL
     client_str = "ImageClient"
     system = "Generate an image of the following description."
 
@@ -224,17 +218,17 @@ class HelpCommand(AgentCommand):
     desc = "help"
     value_type = ValueType.TEXT
     required = False
+    tier = Tier.MINI
 
     @property
     def system(self) -> str:
         cli_dir = Path(__file__).parent
-        sources = {name: (cli_dir / name).read_text() for name in ["flags.py", "parser.py", "session.py", "terminal.py", "main.py"]}
-        source_blocks = "\n\n".join(f"{name}:\n```python\n{src}\n```" for name, src in sources.items())
-
+        source_code = "\n\n".join((cli_dir / name).read_text() for name in Path(cli_dir).glob("*.py"))
         return (
-            "You are q, a command-line LLM tool. A user is asking for help. Answer based on your own source code below.\n\n"
-            f"{source_blocks}\n\n"
-            "Be concise. Show example commands when helpful."
+            "You are `q`, a command-line LLM tool. Answer questions about usage based on the source code."
+            f"\n\n{source_code}\n\n"
+            "Be extremely concise. Answer in one line. Focus on usage."
+            "Always surround code snippets, commands, flags, and paths with backticks."
         )
 
     async def execute(self) -> None:
@@ -256,7 +250,7 @@ class HelpCommand(AgentCommand):
         lines = [
             f"q {__version__} - a command line programming agent",
             "",
-            f"Usage: q [-flag [value]] ...",
+            "Usage: q [-flag [value]] ...",
             "",
             "  Flags can be combined: -sx = -s -x",
             "  Use -- to disable remaining flag parsing.",
@@ -367,9 +361,8 @@ class JsonOption(Flag):
 
 class ModelOption(Flag):
     char = "m"
-    desc = "model"
+    desc = "model (tier|provider|provider:tier|provider:model)"
     value_type = ValueType.STR
-    required = True
 
 
 class NewSessionOption(Flag):

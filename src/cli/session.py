@@ -18,7 +18,7 @@ ENV_PATH = RESOURCES_DIR / ".env"
 class Config(BaseModel):
     """Config schema and defaults."""
 
-    model: str = "openai/gpt-4.1-mini"
+    default_provider: str = "openai"
     code_lang: str = "python"
     current_session_id: int = 1
 
@@ -41,9 +41,9 @@ class SessionManager:
     # Config
 
     @classmethod
-    def load_model(cls) -> str:
-        """Load model from config."""
-        return cls._read_config().model
+    def load_default_provider(cls) -> str:
+        """Load default provider from config."""
+        return cls._read_config().default_provider
 
     @classmethod
     def load_code_lang(cls) -> str:
