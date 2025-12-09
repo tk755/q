@@ -1,6 +1,6 @@
 import re
 
-from .commands import COMMANDS, OPTIONS, ArgMap, Command, Flag, QError, ValueType, get_default_command
+from .flags import COMMANDS, OPTIONS, ArgMap, Command, Flag, QError, ValueType, get_default_command
 
 
 def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str]) -> ArgMap:

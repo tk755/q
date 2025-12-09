@@ -3,23 +3,24 @@ from __future__ import annotations
 import contextlib
 import os
 import platform
-import re
+import shutil
 import string
 import sys
 from abc import ABC, abstractmethod
-from enum import Enum, auto
+from enum import Enum
 from pathlib import Path
-from typing import Any
 
 import distro
+import humanize
 from termcolor import colored
 
 from src import __version__
 from src.providers import load_client_class
 
 from ..agents import ChatAgent
+from ..message import Role
 from .session import SessionManager
-from .terminal import qprint
+from .terminal import format_response, qprint
 
 
 class QError(Exception):
@@ -43,33 +44,10 @@ ArgMap = dict[str, Value]
 
 
 class ValueType(Enum):
-    NONE = auto()
-    TEXT = auto()
-    STR = auto()
-    INT = auto()
-
-
-# region Helpers
-
-
-def _format_response(text: str, code_color: str = "cyan") -> str:
-    """Process LLM response for terminal display."""
-    # shorten links from web search responses
-    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text).strip()
-
-    # convert two-plus newlines into only two
-    text = re.sub(r"\n{2,}", "\n\n", text)
-
-    # remove formatting from response-level code blocks
-    text = re.sub(r"^```.*?\n(.*)\n```$", r"\1", text, flags=re.DOTALL)
-
-    # convert code blocks into colored text
-    text = re.sub(r"```(?:\w+\n?)?(.*?)```", lambda m: colored(m.group(1).strip(), code_color), text, flags=re.DOTALL)
-
-    # convert inline-code into colored text
-    text = re.sub(r"`([^`]+)`", lambda m: colored(m.group(1), code_color), text)
-
-    return text
+    NONE = None
+    TEXT = "text"
+    STR = "str"
+    INT = "N"
 
 
 # region Base Classes
@@ -111,32 +89,15 @@ class Command(Flag):
 class AgentCommand(Command):
     """Base class for commands that prompt an agent."""
 
+    client_str: str = "TextClient"
+    system: str | None = None
+
     async def execute(self) -> None:
-        # pre-agent options
         if "v" in self.args:
             pass  # TODO
         if "n" in self.args:
             SessionManager.new_session()
 
-        # generate response
-        response = await self.generate_response()
-
-        if response is None:
-            return
-
-        # post-agent options
-        if "j" not in self.args:
-            response = _format_response(response)
-
-        # output routing
-        if "o" in self.args:
-            Path(self.args["o"]).write_text(response)
-            qprint(f"Response saved to {self.args['o']}", color="yellow", file=sys.stderr)
-        else:
-            qprint(response)
-
-    async def prompt_agent(self, client_str: str, system: str | None) -> Any:
-        """Create and prompt an agent."""
         # resolve provider and model
         model_path = SessionManager.load_model()
         if "/" not in model_path:
@@ -150,23 +111,32 @@ class AgentCommand(Command):
                 model_path = f"{provider}/{model_arg}"
         provider, model = model_path.split("/", 1)
 
-        # dynamically create client
-        client_class = load_client_class(provider, client_str)
+        # create client dynamically
+        client_class = load_client_class(provider, self.client_str)
         api_key = SessionManager.load_api_key(provider)
         client = client_class(api_key, model)
 
         # create agent
-        agent = ChatAgent(client, system, SessionManager.load_messages())
+        agent = ChatAgent(client, self.system, SessionManager.load_messages())
         if "z" in self.args:
             agent.drop_exchanges(self.args["z"])
 
-        # prompt agent and save messages
+        # prompt agent and save session
         response = await agent.prompt(self.args[self.char])
         SessionManager.save_messages(agent.messages)
-        return response
 
-    @abstractmethod
-    async def generate_response(self) -> str | None: ...
+        # process response
+        self.process_response(response)
+
+    def process_response(self, response: str) -> None:
+        """Format response and route output."""
+        if "j" not in self.args:
+            response = format_response(response)
+        if "o" in self.args:
+            Path(self.args["o"]).write_text(response)
+            qprint(f"Response saved to {self.args['o']}", color="yellow", file=sys.stderr)
+        else:
+            qprint(response)
 
 
 # region Commands
@@ -178,18 +148,12 @@ class TextCommand(AgentCommand):
     value_type = ValueType.TEXT
     required = True
 
-    async def generate_response(self) -> str:
-        return await self.prompt_agent("TextClient", None)
-
 
 class ExplainCommand(AgentCommand):
     char = "e"
     desc = "explain"
     value_type = ValueType.TEXT
-
-    async def generate_response(self) -> str:
-        system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
-        return await self.prompt_agent("TextClient", system)
+    system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
 
 
 class CodeCommand(AgentCommand):
@@ -198,9 +162,9 @@ class CodeCommand(AgentCommand):
     value_type = ValueType.TEXT
     required = True
 
-    async def generate_response(self) -> str:
-        system = f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Assume the programming language is {SessionManager.load_code_lang()} unless otherwise specified."
-        return await self.prompt_agent("TextClient", system)
+    @property
+    def system(self) -> str:
+        return f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Assume the programming language is {SessionManager.load_code_lang()} unless otherwise specified."
 
 
 class ShellCommand(AgentCommand):
@@ -209,22 +173,22 @@ class ShellCommand(AgentCommand):
     value_type = ValueType.TEXT
     required = True
 
-    async def generate_response(self) -> str:
-        system = f"You are a command-line assistant. Given a description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. System is running {self._get_system_info()}."
-        return await self.prompt_agent("TextClient", system)
+    @property
+    def system(self) -> str:
+        return f"You are a command-line assistant. Given a description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. System is running {self._get_system_info()}."
 
     def _get_system_info(self) -> str:
         shell = os.environ.get("SHELL") or os.environ.get("COMSPEC")
         shell = Path(shell).name if shell else ""
 
-        system = platform.system()
-        if system == "Linux":
+        sys_name = platform.system()
+        if sys_name == "Linux":
             with contextlib.suppress(ImportError):
-                system = distro.name(pretty=True)
+                sys_name = distro.name(pretty=True)
 
         if shell:
-            return f"{shell} on {system}"
-        return system
+            return f"{shell} on {sys_name}"
+        return sys_name
 
 
 class WebCommand(AgentCommand):
@@ -232,10 +196,8 @@ class WebCommand(AgentCommand):
     desc = "web"
     value_type = ValueType.TEXT
     required = True
-
-    async def generate_response(self) -> str:
-        system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence. Always search the internet."
-        return await self.prompt_agent("WebClient", system)
+    client_str = "WebClient"
+    system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence. Always search the internet."
 
 
 class ImageCommand(AgentCommand):
@@ -243,17 +205,14 @@ class ImageCommand(AgentCommand):
     desc = "image"
     value_type = ValueType.TEXT
     required = True
+    client_str = "ImageClient"
+    system = "Generate an image of the following description."
 
-    async def generate_response(self) -> None:
-        system = "Generate an image given a description."
-        image = await self.prompt_agent("ImageClient", system)
-        self.save_image(image)
-
-    def save_image(self, image: bytes) -> None:
+    def process_response(self, response: bytes) -> None:
         text = self.args[self.char].translate(str.maketrans("", "", string.punctuation)).replace(" ", "_")
         path = self.args.get("o") or f"q_{text}"
         path = path if path.lower().endswith(".png") else f"{path}.png"
-        Path(path).write_bytes(image)
+        Path(path).write_bytes(response)
         qprint(f"Image saved to {path}", color="yellow", file=sys.stderr)
 
 
@@ -294,11 +253,36 @@ class LoadCommand(Command):
     async def execute(self) -> None:
         session_id = self.args.get(self.char)
         if session_id is None:
-            qprint(SessionManager.format_session_list())
-            return
-        if not SessionManager.switch_session(session_id):
+            self._print_session_list()
+        elif not SessionManager.switch_session(session_id):
             raise QError(f"invalid session: {session_id}")
-        qprint(f"Loaded session {session_id}", color="yellow", file=sys.stderr)
+        else:
+            qprint(f"Loaded session {session_id}", color="yellow", file=sys.stderr)
+
+    def _print_session_list(self) -> None:
+        sessions = SessionManager.list_sessions()
+        if not sessions:
+            qprint("No sessions found.")
+            return
+
+        current_id = SessionManager.load_session_id()
+        term_width = shutil.get_terminal_size().columns
+
+        for s in sessions:
+            age = humanize.naturaltime(s.updated) if s.updated else "unknown"
+            prefix_len = len(f"    {s.id}.  ")
+            suffix_len = len(f" ({age})")
+            max_len = max(20, term_width - prefix_len - suffix_len - 5)
+
+            preview = "(empty)"
+            for msg in reversed(s.messages):
+                if msg.role == Role.USER:
+                    preview = msg.content[:max_len] + "..." if len(msg.content) > max_len else msg.content
+                    break
+
+            line = f"    {s.id}.  {preview} ({age})"
+            color = None if s.id == current_id else "dark_grey"
+            qprint(line, color=color)
 
 
 class HelpCommand(Command):
@@ -309,45 +293,39 @@ class HelpCommand(Command):
 
     async def execute(self) -> None:
         if self.args.get(self.char):
-            qprint(self._help_prompt())
+            self._print_help_prompt()
         else:
-            qprint(self._help_text())
+            self._print_help()
 
-    def _help_prompt(self) -> str:
+    def _print_help_prompt(self) -> None:
         raise QError("-h <text> not yet implemented")
 
-    def _help_text(self) -> str:
+    def _print_help(self) -> None:
         usage_color = "green"
         command_color = "cyan"
         option_color = "dark_grey"
 
         flags = []
         for f in sorted(COMMANDS + OPTIONS, key=lambda f: f.char):
-            flag_arg = ""
-            if f.value_type == ValueType.INT:
-                flag_arg += "N"
-            elif f.value_type == ValueType.STR:
-                flag_arg += "str"
-            elif f.value_type == ValueType.TEXT:
-                flag_arg += "text"
-            if f.value_type != ValueType.NONE:
-                if f.required:
-                    flag_arg = f"<{flag_arg}>"
-                else:
-                    flag_arg = f"[{flag_arg}]"
+            flag_arg = f.value_type.value or ""
+            if flag_arg:
+                flag_arg = f"<{flag_arg}>" if f.required else f"[{flag_arg}]"
 
             flag_str = f"-{f.char}  {f.desc} {flag_arg}"
             flag_fmt = colored(flag_str, command_color if f in COMMANDS else option_color)
             flags.append(f"    {flag_fmt:<{10}}")
 
-        text = f"q {__version__} - a command line programming agent"
-        usage = colored("q [-flag [value]] ...", usage_color)
-        text += "\n\nUsage: " + usage + "\n"
-        text += "\n  Flags can be combined: -sx = -s -x"
-        text += "\n  Use -- to disable remaining flag parsing."
-        text += "\n  One " + colored("command", command_color) + " is required."
-        text += "\n\nFlags:\n" + "\n".join(flags)
-        return text
+        qprint(f"q {__version__} - a command line programming agent")
+        qprint()
+        qprint("Usage:", colored("q [-flag [value]] ...", usage_color))
+        qprint()
+        qprint("  Flags can be combined: -sx = -s -x")
+        qprint("  Use -- to disable remaining flag parsing.")
+        qprint("  One", colored("command", command_color), "is required.")
+        qprint()
+        qprint("Flags:")
+        for flag in flags:
+            qprint(flag)
 
 
 # region Options

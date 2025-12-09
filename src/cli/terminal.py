@@ -34,3 +34,23 @@ def qinput(text: str = "", color: str | None = None, secret: bool = False) -> st
     if secret:
         return getpass.getpass(_sanitize_text(text))
     return input(_sanitize_text(text))
+
+
+def format_response(text: str, code_color: str = "cyan") -> str:
+    """Format LLM response for terminal display."""
+    # shorten links from web search responses
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text).strip()
+
+    # convert two-plus newlines into only two
+    text = re.sub(r"\n{2,}", "\n\n", text)
+
+    # remove formatting from response-level code blocks
+    text = re.sub(r"^```.*?\n(.*)\n```$", r"\1", text, flags=re.DOTALL)
+
+    # convert code blocks into colored text
+    text = re.sub(r"```(?:\w+\n?)?(.*?)```", lambda m: colored(m.group(1).strip(), code_color), text, flags=re.DOTALL)
+
+    # convert inline-code into colored text
+    text = re.sub(r"`([^`]+)`", lambda m: colored(m.group(1), code_color), text)
+
+    return text

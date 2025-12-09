@@ -1,15 +1,12 @@
 import json
 import os
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-import humanize
 from dotenv import dotenv_values, set_key
 from pydantic import BaseModel, Field
-from termcolor import colored
 
-from ..message import Message, Role
+from ..message import Message
 from .terminal import qinput
 
 RESOURCES_DIR = Path.home() / ".q"
@@ -99,34 +96,17 @@ class SessionManager:
         return cls._read_config().current_session_id
 
     @classmethod
-    def format_session_list(cls) -> str:
-        """Format all sessions for terminal display."""
-        sessions = cls._list_all_sessions()
-        if not sessions:
-            return "No sessions found."
-
-        current_id = cls._read_config().current_session_id
-        term_width = shutil.get_terminal_size().columns
-
-        lines = []
-        for s in sessions:
-            age = humanize.naturaltime(s.updated) if s.updated else "unknown"
-            prefix_len = len(f"    {s.id}.  ")
-            suffix_len = len(f" ({age})")
-            max_len = max(20, term_width - prefix_len - suffix_len - 5)
-
-            preview = "(empty)"
-            for msg in reversed(s.messages):
-                if msg.role == Role.USER:
-                    preview = msg.content[:max_len] + "..." if len(msg.content) > max_len else msg.content
-                    break
-
-            line = f"    {s.id}.  {preview} ({age})"
-            if s.id != current_id:
-                line = colored(line, "dark_grey")
-            lines.append(line)
-
-        return "\n".join(lines)
+    def list_sessions(cls) -> list[Session]:
+        """Load all sessions from disk, sorted by ID."""
+        if not SESSIONS_DIR.exists():
+            return []
+        sessions = []
+        for path in sorted(SESSIONS_DIR.glob("*.json"), key=lambda p: int(p.stem)):
+            try:
+                sessions.append(Session.model_validate_json(path.read_text()))
+            except Exception:
+                continue
+        return sessions
 
     @classmethod
     def switch_session(cls, session_id: int) -> bool:
@@ -191,19 +171,6 @@ class SessionManager:
         cls._ensure_dirs()
         path = SESSIONS_DIR / f"{session.id}.json"
         path.write_text(session.model_dump_json(indent=2))
-
-    @classmethod
-    def _list_all_sessions(cls) -> list[Session]:
-        """Load all sessions from disk, sorted by ID."""
-        if not SESSIONS_DIR.exists():
-            return []
-        sessions = []
-        for path in sorted(SESSIONS_DIR.glob("*.json"), key=lambda p: int(p.stem)):
-            try:
-                sessions.append(Session.model_validate_json(path.read_text()))
-            except Exception:
-                continue
-        return sessions
 
     @classmethod
     def _read_secrets(cls) -> dict[str, str]:
