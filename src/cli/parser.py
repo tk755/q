@@ -1,6 +1,7 @@
 import re
 
-from .flags import COMMANDS, OPTIONS, ArgMap, Command, Flag, QError, ValueType, get_default_command
+from .flags import COMMANDS, OPTIONS, ArgMap, Command, Flag, ValueType, get_default_command
+from .terminal import UserError
 
 
 def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str]) -> ArgMap:
@@ -10,7 +11,7 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
     Disambiguation rules:
     1. Flags with required values take priority over optional ones.
     2. Flags which bind to int values are excluded if value is not int.
-    3. If zero or multiple candidates remain, raise QError.
+    3. If zero or multiple candidates remain, raise UserError.
     """
     none_flags = [f for f in pending_flags if f.value_type == ValueType.NONE]
     value_flags = [f for f in pending_flags if f.value_type != ValueType.NONE]
@@ -31,13 +32,13 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
         if len(required) == 1:
             consumer = required[0]
         elif len(required) > 1:
-            raise QError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in required))
+            raise UserError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in required))
         elif len(optional) == 1:
             consumer = optional[0]
         elif len(optional) > 1:
-            raise QError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in optional))
+            raise UserError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in optional))
         else:
-            raise QError(
+            raise UserError(
                 ", ".join(f"-{f.char}" for f in pending_flags)
                 + f" received invalid argument{('s' if len(pending_tokens) > 1 else '')}: "
                 + ", ".join(f"'{t}'" for t in pending_tokens)
@@ -48,7 +49,7 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
             value = " ".join(pending_tokens)
         else:  # STR or INT
             if len(pending_tokens) > 1:
-                raise QError(
+                raise UserError(
                     f"-{consumer.char} expects one token but got: " + ", ".join(f"'{t}'" for t in pending_tokens)
                 )
             value = pending_tokens[0]
@@ -56,7 +57,7 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
                 try:
                     value = int(value)
                 except ValueError:
-                    raise QError(f"-{consumer.char} expects an integer but got: '{pending_tokens[0]}'") from None
+                    raise UserError(f"-{consumer.char} expects an integer but got: '{pending_tokens[0]}'") from None
 
     # resolve flag values
     args: ArgMap = {}
@@ -66,7 +67,7 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
         if f == consumer:
             args[f.char] = value
         elif f.required:
-            raise QError(f"-{f.char} requires a value")
+            raise UserError(f"-{f.char} requires a value")
         else:
             args[f.char] = f.default
     return args
@@ -99,7 +100,7 @@ def parse(argv: list[str]) -> Command:
 
             duplicates = set(resolved.keys()) & set(args.keys())
             if duplicates:
-                raise QError(
+                raise UserError(
                     f"duplicate flag{'' if len(duplicates) == 1 else 's'}: " + ", ".join(f"-{k}" for k in duplicates)
                 )
 
@@ -113,7 +114,7 @@ def parse(argv: list[str]) -> Command:
         if is_flag:
             for c in token[1:]:
                 if c not in flag_lookup:
-                    raise QError(f"unknown flag: -{c}")
+                    raise UserError(f"unknown flag: -{c}")
                 pending_flags.append(flag_lookup[c])
             pos += 1
             continue
@@ -128,8 +129,8 @@ def parse(argv: list[str]) -> Command:
     valid_commands = {f.char for f in COMMANDS}
     commands = [c for c in args if c in valid_commands]
     if len(commands) > 1:
-        raise QError("multiple commands: " + ", ".join(f"-{c}" for c in commands))
+        raise UserError("multiple commands: " + ", ".join(f"-{c}" for c in commands))
     if not commands:
-        raise QError("no command specified")
+        raise UserError("no command specified")
 
     return flag_lookup[commands[0]](args)

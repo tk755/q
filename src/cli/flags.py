@@ -19,9 +19,9 @@ from src.providers import load_client_class
 
 from ..agents import ChatAgent
 from ..message import Role
-from .models import QError, Tier, resolve_model_arg
+from .models import Tier, resolve_model_arg
 from .session import SessionManager
-from .terminal import format_response, qprint
+from .terminal import UserError, format_response, qprint
 
 # region Registry
 
@@ -272,7 +272,7 @@ class LoadCommand(Command):
         if session_id is None:
             self._print_session_list()
         elif not SessionManager.switch_session(session_id):
-            raise QError(f"invalid session: {session_id}")
+            raise UserError(f"invalid session: {session_id}")
         else:
             qprint(f"Loaded session {session_id}", color="yellow", file=sys.stderr)
 
@@ -308,7 +308,7 @@ class RetrievalCommand(Command):
     value_type = ValueType.TEXT
 
     async def execute(self) -> None:
-        raise QError(f"-{self.char} not yet implemented")
+        raise UserError(f"-{self.char} not yet implemented")
 
 
 class AutoCommand(Command):
@@ -318,7 +318,7 @@ class AutoCommand(Command):
     required = True
 
     async def execute(self) -> None:
-        raise QError(f"-{self.char} not yet implemented")
+        raise UserError(f"-{self.char} not yet implemented")
 
 
 class UserCommand(Command):
@@ -328,7 +328,7 @@ class UserCommand(Command):
     required = True
 
     async def execute(self) -> None:
-        raise QError(f"-{self.char} not yet implemented")
+        raise UserError(f"-{self.char} not yet implemented")
 
 
 # region Options

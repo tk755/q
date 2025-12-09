@@ -9,6 +9,10 @@ from termcolor import colored
 just_fix_windows_console()
 
 
+class UserError(Exception):
+    """User-facing error displayed without traceback."""
+
+
 def is_terminal() -> bool:
     """Check if the output is a terminal."""
     return sys.stdout.isatty()
@@ -52,7 +56,9 @@ def format_response(text: str, code_color: str = "cyan") -> str:
 
     if is_terminal():
         # convert code blocks into colored text
-        text = re.sub(r"```(?:\w+\n?)?(.*?)```", lambda m: colored(m.group(1).strip(), code_color), text, flags=re.DOTALL)
+        text = re.sub(
+            r"```(?:\w+\n?)?(.*?)```", lambda m: colored(m.group(1).strip(), code_color), text, flags=re.DOTALL
+        )
 
         # convert inline-code into colored text
         text = re.sub(r"`([^`]+)`", lambda m: colored(m.group(1), code_color), text)

@@ -1,8 +1,6 @@
 from enum import Enum
 
-
-class QError(Exception):
-    """CLI error."""
+from .terminal import UserError
 
 
 class Tier(Enum):
@@ -27,8 +25,8 @@ MODELS = {
 
 def _lookup(provider: str, tier: Tier) -> tuple[str, str, dict]:
     if provider not in MODELS:
-        raise QError(f"unknown provider: {provider}")
-    
+        raise UserError(f"unknown provider: {provider}")
+
     config = MODELS[provider][tier]
     model = config["model"]
     model_args = {k: v for k, v in config.items() if k != "model"}
@@ -60,4 +58,4 @@ def resolve_model_arg(arg: str | None, default_tier: Tier, default_provider: str
     if arg in MODELS:
         return _lookup(arg, default_tier)
 
-    raise QError(f"invalid model: {arg}")
+    raise UserError(f"invalid model: {arg}")

@@ -1,15 +1,15 @@
 import asyncio
 import sys
 
-from .parser import QError, parse
-from .terminal import qprint
+from .parser import parse
+from .terminal import UserError, qprint
 
 
 def main():
     try:
         command = parse(sys.argv[1:])
         asyncio.run(command.execute())
-    except (QError, ImportError) as e:
+    except (UserError, ImportError) as e:
         qprint(str(e), color="red", file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:
