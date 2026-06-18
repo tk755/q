@@ -17,8 +17,8 @@ import humanize
 import pyperclip
 from termcolor import colored
 
-from src import __version__
-from src.providers import load_client_class
+from q import __version__
+from q.providers import load_client_class
 
 from ..agents import ChatAgent
 from ..message import Role

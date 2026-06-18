@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 
 # print package info
 NAME=$(grep -oP '(?<=^name = ")[^"]+' pyproject.toml)
-VERSION_FILE="src/__init__.py"
+VERSION_FILE="q/__init__.py"
 VERSION=$(grep -oP '(?<=__version__ = ")[^"]+' "${VERSION_FILE}")
 printf "Package: \033[33m%s\033[0m\nVersion: \033[33m%s\033[0m\n" "${NAME}" "${VERSION}"
 

@@ -25,10 +25,13 @@ readme = "README.md"
 license = "MIT"
 
 [project.scripts]
-q = "q:main" # "src.cli.main:main"
+q = "q.cli.main:main"
 
 [project.urls]
 Repository = "https://github.com/tk755/q"
+
+[tool.setuptools.packages.find]
+include = ["q*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "q.__version__"}
