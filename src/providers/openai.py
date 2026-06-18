@@ -10,7 +10,6 @@ class OpenAIClient[T](Client[T]):
 
     def _import_sdk(self) -> None:
         import openai
-
         self._openai = openai
 
     def _should_retry(self, error: Exception) -> bool:

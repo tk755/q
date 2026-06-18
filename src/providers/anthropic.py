@@ -15,7 +15,6 @@ class AnthropicClient[T](Client[T]):
 
     def _import_sdk(self) -> None:
         import anthropic
-
         self._anthropic = anthropic
 
     def _should_retry(self, error: Exception) -> bool:
@@ -39,14 +38,14 @@ class AnthropicClient[T](Client[T]):
     def _create_async_client(self) -> Any:
         return self._anthropic.AsyncAnthropic(api_key=self.api_key)
 
-    def _convert_messages(self, messages: list[Message]) -> tuple[str | None, list[dict]]:
+    def _convert_messages(self, messages: list[Message]) -> tuple[list[dict] | None, list[dict]]:
         """Convert Message objects to API format."""
         system_prompt = None
         api_messages = []
 
         for msg in messages:
             if msg.role == Role.SYSTEM:
-                system_prompt = msg.content
+                system_prompt = [{"type": "text", "text": msg.content}]
             else:
                 api_messages.append(msg.model_dump(include={"role", "content"}))
 
@@ -59,7 +58,9 @@ class TextClient(AnthropicClient[str]):
     async def _generate(self, messages: list[Message]) -> str:
         system_prompt, api_messages = self._convert_messages(messages)
 
-        response = await self._async_client.messages.create(
-            messages=api_messages, system=system_prompt, model=self.model, **self.model_args
-        )
+        kwargs = {"messages": api_messages, "model": self.model, **self.model_args}
+        if system_prompt is not None:
+            kwargs["system"] = system_prompt
+
+        response = await self._async_client.messages.create(**kwargs)
         return response.content[0].text
