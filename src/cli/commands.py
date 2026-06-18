@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import platform
@@ -199,7 +200,7 @@ class ShellCommand(AgentCommand):
     char = "s"
     desc = "shell"
     value_type = ValueType.TEXT
-    required = True
+    required = False
     tier = Tier.MED
     clip = True
 
@@ -220,7 +221,39 @@ class ShellCommand(AgentCommand):
             return f"{shell} on {sys_name}"
         return sys_name
 
+    async def execute(self) -> None:
+        # rerun and fix last command (requires shell integration)
+        if self.args[self.char] is None:
+            cmd = os.environ.get("Q_CMD", None)
+            exit_code = os.environ.get("Q_EXIT", None)
+            if cmd is None or exit_code is None:
+                raise UserError(
+                    "q -s without a prompt requires shell integration. Add to ~/.bashrc:\n"
+                    '    q() { Q_EXIT=$? Q_CMD=$(fc -ln -1) command q "$@"; }'
+                )
+            cmd, exit_code = cmd.strip(), exit_code.strip()
+
+            try:
+                # run command and capture output
+                proc = await asyncio.create_subprocess_shell(
+                    cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+                text = f"The command `{cmd}` failed with exit code {proc.returncode}. Fix it."
+                if stderr:
+                    text += f"\nSTDERR:\n{stderr.decode().strip()}"
+                if stdout:
+                    text += f"\nSTDOUT:\n{stdout.decode().strip()}"
+            except TimeoutError:
+                # kill long-running command
+                proc.kill()
+                text = f"The command `{cmd}` failed with exit code {exit_code}. Fix it."
+            self.args[self.char] = text
+
+        await super().execute()
+
     def process_response(self, response: str) -> None:
+        # execute command
         if "x" in self.args:
             qprint(f"> {response}", color="green", file=sys.stderr)
             subprocess.run(response, shell=True)
