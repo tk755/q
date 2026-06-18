@@ -12,6 +12,7 @@ from pathlib import Path
 
 import distro
 import humanize
+import pyperclip
 from termcolor import colored
 
 from src import __version__
@@ -88,6 +89,7 @@ class AgentCommand(Command):
     client_str: str = "TextClient"
     tier: Tier
     system: str | None = None
+    clip: bool = False
 
     async def execute(self) -> None:
         if "n" in self.args:
@@ -104,11 +106,11 @@ class AgentCommand(Command):
 
         if "v" in self.args:
             qprint("MODEL PARAMETERS:", color="cyan", file=sys.stderr)
-            qprint("model: ", color="yellow", file=sys.stderr, end="")
+            qprint("model: ", color="green", file=sys.stderr, end="")
             qprint(f"{client.model} ({provider})", file=sys.stderr)
             if client.model_args:
                 for k, v in client.model_args.items():
-                    qprint(f"{k}: ", color="yellow", file=sys.stderr, end="")
+                    qprint(f"{k}: ", color="green", file=sys.stderr, end="")
                     qprint(f"{v}", file=sys.stderr)
 
         # resolve system prompt (command's system overrides saved system)
@@ -126,10 +128,10 @@ class AgentCommand(Command):
         if "v" in self.args:
             qprint("\nMESSAGES:", color="cyan", file=sys.stderr)
             if agent.system:
-                qprint("system: ", color="yellow", file=sys.stderr, end="")
+                qprint("system: ", color="green", file=sys.stderr, end="")
                 qprint(agent.system, file=sys.stderr)
             for msg in agent.messages:
-                qprint(f"{msg.role.value}: ", color="yellow", file=sys.stderr, end="")
+                qprint(f"{msg.role.value}: ", color="green", file=sys.stderr, end="")
                 qprint(msg.content, file=sys.stderr)
 
         # process response
@@ -139,11 +141,19 @@ class AgentCommand(Command):
         """Format response and route output."""
         if "j" not in self.args:
             response = format_response(response)
+
         if "o" in self.args:
             Path(self.args["o"]).write_text(response)
             qprint(f"Response saved to {self.args['o']}", color="yellow", file=sys.stderr)
-        elif "v" not in self.args:
-            qprint(response)
+        else:
+            if "v" not in self.args:
+                qprint(response)
+            
+            # copy output to clipboard
+            if self.clip:
+                with contextlib.suppress(pyperclip.PyperclipException):
+                    pyperclip.copy(response)
+                    qprint("Copied to clipboard.", color="yellow", file=sys.stderr)
 
 
 # region Commands
@@ -171,6 +181,7 @@ class CodeCommand(AgentCommand):
     value_type = ValueType.TEXT
     required = True
     tier = Tier.FULL
+    clip = True
 
     @property
     def system(self) -> str:
@@ -183,6 +194,7 @@ class ShellCommand(AgentCommand):
     value_type = ValueType.TEXT
     required = True
     tier = Tier.MINI
+    clip = True
 
     @property
     def system(self) -> str:
