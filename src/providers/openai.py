@@ -37,15 +37,10 @@ class OpenAIClient[T](Client[T]):
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, str]]:
         return [msg.model_dump(include={"role", "content"}) for msg in messages]
 
-    @property
-    def tools(self) -> list[dict[str, str]] | None:
-        return None
-
     async def _generate(self, messages: list[Message]) -> T:
         response = await self._async_client.responses.create(
             input=self._convert_messages(messages),
             model=self.model,
-            tools=self.tools,
             **self.model_args,
         )
         return self._extract(response)
@@ -59,23 +54,14 @@ class TextClient(OpenAIClient[str]): ...
 
 class WebClient(OpenAIClient[str]):
     def __init__(self, api_key: str, model: str, *, search_context_size: str = "low", **model_args):
-        self._search_context_size = search_context_size
+        model_args["tools"] = [{"type": "web_search_preview", "search_context_size": search_context_size}]
         super().__init__(api_key, model, **model_args)
-
-    @property
-    def tools(self) -> list[dict[str, str]]:
-        return [{"type": "web_search_preview", "search_context_size": self._search_context_size}]
 
 
 class ImageClient(OpenAIClient[bytes]):
     def __init__(self, api_key: str, model: str, *, size: str = "1024x1024", quality: str = "auto", **model_args):
-        self._size = size
-        self._quality = quality
+        model_args["tools"] = [{"type": "image_generation", "size": size, "quality": quality}]
         super().__init__(api_key, model, **model_args)
-
-    @property
-    def tools(self) -> list[dict[str, str]]:
-        return [{"type": "image_generation", "size": self._size, "quality": self._quality}]
 
     def _extract(self, response: Any) -> bytes:
         for output in response.output:

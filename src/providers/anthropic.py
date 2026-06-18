@@ -9,6 +9,10 @@ class AnthropicClient[T](Client[T]):
 
     DEFAULT_MAX_TOKENS = 1024
 
+    def __init__(self, api_key: str, model: str, **model_args):
+        model_args.setdefault("max_tokens", self.DEFAULT_MAX_TOKENS)
+        super().__init__(api_key, model, **model_args)
+
     def _import_sdk(self) -> None:
         import anthropic
 
@@ -35,13 +39,6 @@ class AnthropicClient[T](Client[T]):
     def _create_async_client(self) -> Any:
         return self._anthropic.AsyncAnthropic(api_key=self.api_key)
 
-    def _default_model_args(self) -> dict[str, Any]:
-        """Get missing model args required by API."""
-        args = dict(self.model_args)
-        if "max_tokens" not in args:
-            args["max_tokens"] = self.DEFAULT_MAX_TOKENS
-        return args
-
     def _convert_messages(self, messages: list[Message]) -> tuple[str | None, list[dict]]:
         """Convert Message objects to API format."""
         system_prompt = None
@@ -63,6 +60,6 @@ class TextClient(AnthropicClient[str]):
         system_prompt, api_messages = self._convert_messages(messages)
 
         response = await self._async_client.messages.create(
-            messages=api_messages, system=system_prompt, model=self.model, **self._default_model_args()
+            messages=api_messages, system=system_prompt, model=self.model, **self.model_args
         )
         return response.content[0].text
