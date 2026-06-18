@@ -1,6 +1,6 @@
 import re
 
-from .flags import COMMANDS, OPTIONS, ArgMap, Command, Flag, ValueType, get_default_command
+from .commands import COMMANDS, OPTIONS, ArgMap, Command, Flag, ValueType, get_default_command
 from .terminal import UserError
 
 

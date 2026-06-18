@@ -170,6 +170,7 @@ class TextCommand(AgentCommand):
     value_type = ValueType.TEXT
     required = True
     tier = Tier.MED
+    system = ""
 
 
 class ExplainCommand(AgentCommand):
