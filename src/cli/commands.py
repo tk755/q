@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import string
+import subprocess
 import sys
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -218,6 +219,13 @@ class ShellCommand(AgentCommand):
         if shell:
             return f"{shell} on {sys_name}"
         return sys_name
+
+    def process_response(self, response: str) -> None:
+        if "x" in self.args:
+            qprint(f"> {response}", color="green", file=sys.stderr)
+            subprocess.run(response, shell=True)
+        else:
+            super().process_response(response)
 
 
 class WebCommand(AgentCommand):
