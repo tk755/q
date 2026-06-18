@@ -376,45 +376,8 @@ class LoadCommand(Command):
             color = None if s.id == current_id else "dark_grey"
             qprint(line, color=color)
 
-"""
-class RagCommand(Command):
-    char = "r"
-    desc = "rag"
-    value_type = ValueType.TEXT
-
-    async def execute(self) -> None:
-        raise UserError(f"-{self.char} not yet implemented")
-
-
-class AutoCommand(Command):
-    char = "a"
-    desc = "auto"
-    value_type = ValueType.TEXT
-    required = True
-
-    async def execute(self) -> None:
-        raise UserError(f"-{self.char} not yet implemented")
-
-
-class UserCommand(Command):
-    char = "u"
-    desc = "user command"
-    value_type = ValueType.STR
-    required = True
-
-    async def execute(self) -> None:
-        raise UserError(f"-{self.char} not yet implemented")
-"""
-
 
 # region Options
-
-
-class BatchOption(Flag):
-    char = "b"
-    desc = "batch"
-    value_type = ValueType.TEXT
-    required = True
 
 
 class DirectoryOption(Flag):
@@ -462,11 +425,6 @@ class VerboseOption(Flag):
 class ExecuteOption(Flag):
     char = "x"
     desc = "execute"
-
-
-class YesOption(Flag):
-    char = "y"
-    desc = "accept all"
 
 
 class UndoOption(Flag):
