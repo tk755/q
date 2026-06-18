@@ -30,6 +30,7 @@ class Session(BaseModel):
     id: int
     system: str | None = None
     messages: list[Message] = Field(default_factory=list)
+    command_char: str | None = None
     created: datetime | None = None
     updated: datetime | None = None
 
@@ -82,17 +83,24 @@ class SessionManager:
         return session.messages if session else None
 
     @classmethod
-    def save_session(cls, system: str | None, messages: list[Message]) -> None:
+    def load_command_char(cls) -> str | None:
+        """Load last command char from active session."""
+        session = cls._read_session(cls._read_config().current_session_id)
+        return session.command_char if session else None
+
+    @classmethod
+    def save_session(cls, system: str | None, messages: list[Message], command_char: str | None = None) -> None:
         """Creates or updates active session with system prompt and messages."""
         session_id = cls._read_config().current_session_id
         session = cls._read_session(session_id)
         now = datetime.now(UTC)
 
         if session is None:
-            session = Session(id=session_id, system=system, messages=messages, created=now, updated=now)
+            session = Session(id=session_id, system=system, messages=messages, command_char=command_char, created=now, updated=now)
         else:
             session.system = system
             session.messages = messages
+            session.command_char = command_char
             session.updated = now
 
         cls._write_session(session)

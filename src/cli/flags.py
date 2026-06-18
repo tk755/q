@@ -31,6 +31,11 @@ OPTIONS: list[type[Flag]] = []
 
 
 def get_default_command() -> type[Command]:
+    char = SessionManager.load_command_char()
+    if char:
+        for cmd in COMMANDS:
+            if cmd.char == char:
+                return cmd
     return TextCommand
 
 
@@ -123,7 +128,7 @@ class AgentCommand(Command):
 
         # prompt agent and save session
         response = await agent.prompt(self.args[self.char])
-        SessionManager.save_session(agent.system, agent.messages)
+        SessionManager.save_session(agent.system, agent.messages, self.char)
 
         if "v" in self.args:
             qprint("\nMESSAGES:", color="cyan", file=sys.stderr)
