@@ -169,14 +169,14 @@ class TextCommand(AgentCommand):
     desc = "text"
     value_type = ValueType.TEXT
     required = True
-    tier = Tier.FULL
+    tier = Tier.MED
 
 
 class ExplainCommand(AgentCommand):
     char = "e"
     desc = "explain"
     value_type = ValueType.TEXT
-    tier = Tier.FULL
+    tier = Tier.HIGH
     system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
 
 
@@ -185,7 +185,7 @@ class CodeCommand(AgentCommand):
     desc = "code"
     value_type = ValueType.TEXT
     required = True
-    tier = Tier.FULL
+    tier = Tier.HIGH
     clip = True
 
     @property
@@ -198,7 +198,7 @@ class ShellCommand(AgentCommand):
     desc = "shell"
     value_type = ValueType.TEXT
     required = True
-    tier = Tier.MINI
+    tier = Tier.MED
     clip = True
 
     @property
@@ -224,7 +224,7 @@ class WebCommand(AgentCommand):
     desc = "web"
     value_type = ValueType.TEXT
     required = True
-    tier = Tier.MINI
+    tier = Tier.LOW
     client_str = "WebClient"
     system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence. Always search the internet."
 
@@ -234,7 +234,7 @@ class ImageCommand(AgentCommand):
     desc = "image"
     value_type = ValueType.TEXT
     required = True
-    tier = Tier.FULL
+    tier = Tier.MED
     client_str = "ImageClient"
     system = "Generate an image of the following description."
 
@@ -251,7 +251,7 @@ class HelpCommand(AgentCommand):
     desc = "help"
     value_type = ValueType.TEXT
     required = False
-    tier = Tier.MINI
+    tier = Tier.LOW
 
     @property
     def system(self) -> str:
