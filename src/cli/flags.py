@@ -90,8 +90,6 @@ class AgentCommand(Command):
     system: str | None = None
 
     async def execute(self) -> None:
-        if "v" in self.args:
-            pass  # TODO
         if "n" in self.args:
             SessionManager.new_session()
 
@@ -103,6 +101,15 @@ class AgentCommand(Command):
         client_class = load_client_class(provider, self.client_str)
         api_key = SessionManager.load_api_key(provider)
         client = client_class(api_key, model, **model_args)
+
+        if "v" in self.args:
+            qprint("MODEL PARAMETERS:", color="cyan", file=sys.stderr)
+            qprint("model: ", color="yellow", file=sys.stderr, end="")
+            qprint(f"{client.model} ({provider})", file=sys.stderr)
+            if client.model_args:
+                for k, v in client.model_args.items():
+                    qprint(f"{k}: ", color="yellow", file=sys.stderr, end="")
+                    qprint(f"{v}", file=sys.stderr)
 
         # resolve system prompt (command's system overrides saved system)
         system = self.system if self.system is not None else SessionManager.load_system()
@@ -116,6 +123,15 @@ class AgentCommand(Command):
         response = await agent.prompt(self.args[self.char])
         SessionManager.save_session(agent.system, agent.messages)
 
+        if "v" in self.args:
+            qprint("\nMESSAGES:", color="cyan", file=sys.stderr)
+            if agent.system:
+                qprint("system: ", color="yellow", file=sys.stderr, end="")
+                qprint(agent.system, file=sys.stderr)
+            for msg in agent.messages:
+                qprint(f"{msg.role.value}: ", color="yellow", file=sys.stderr, end="")
+                qprint(msg.content, file=sys.stderr)
+
         # process response
         self.process_response(response)
 
@@ -126,7 +142,7 @@ class AgentCommand(Command):
         if "o" in self.args:
             Path(self.args["o"]).write_text(response)
             qprint(f"Response saved to {self.args['o']}", color="yellow", file=sys.stderr)
-        else:
+        elif "v" not in self.args:
             qprint(response)
 
 
@@ -301,10 +317,10 @@ class LoadCommand(Command):
             color = None if s.id == current_id else "dark_grey"
             qprint(line, color=color)
 
-
-class RetrievalCommand(Command):
+"""
+class RagCommand(Command):
     char = "r"
-    desc = "retrieval"
+    desc = "rag"
     value_type = ValueType.TEXT
 
     async def execute(self) -> None:
@@ -329,6 +345,7 @@ class UserCommand(Command):
 
     async def execute(self) -> None:
         raise UserError(f"-{self.char} not yet implemented")
+"""
 
 
 # region Options
