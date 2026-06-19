@@ -1,8 +1,8 @@
 # Overview
 
-`q` is a lightweight, flexible, multi-provider LLM-agent framework for the terminal. 
+`q` is a provider-agnostic, capability-driven LLM framework and command-line agent.
 
-I built this before Claude Code ever existed, and it remains useful to me for quick CLI interactions or prototyping multi-agent experiments. However, for most complex coding tasks, Claude Code is unquestionably superior.
+> I originally built this as a personal CLI tool before Claude Code existed. I still find it more useful for quick shell interactions and running multi-model experiments.
 
 # Installation
 
@@ -49,8 +49,78 @@ Requires Python 3.12+.
 | `-y` |              |         |                                |         |
 | `-z` | undo         | - / int | undo exchanges (default 1)     | Option  |
 
-<!-- [TODO]
-
 # Library Usage
 
-`q` follows a highly modular and provider-agnostic capability-driven design. -->
+The `q` library is built on two principles:
+
+**Clients are single-capability.** Each client does one thing (e.g. text generation, image generation, web search, etc.) and has a static return type. No mode switching or tool selection logic is necessary.
+
+**Agents are provider- and capability-agnostic.** Every agent accepts any client and inherits its return type, regardless of what the underlying client does or which provider it calls.
+
+## Clients
+
+A **client** wraps a provider's API for one capability.
+
+Clients extend `Client[T]` and require an API key and model name, along with any model-specific overrides:
+
+```python
+Client[T](api_key: str, model: str, **model_args)
+Client[T].generate(messages: list[Message]) -> T
+```
+
+A number of built-in clients are provided for various providers and capabilities:
+
+| Client        | T       | Description                  | `openai` | `anthropic` |
+| ------------- | ------- | ---------------------------- | :------: | :---------: |
+| `TextClient`  | `str`   | text generation              | ✓        | ✓           |
+| `WebClient`   | `str`   | web-grounded text generation | ✓        | ✗           |
+| `ImageClient` | `bytes` | image generation             | ✓        | ✗           |
+
+Clients can be instantiated directly from their provider module:
+
+```python
+from q.providers.openai import WebClient
+
+client = WebClient(api_key, model="gpt-5.4-mini", reasoning={"effort": "high"})
+```
+
+Clients can also be dynamically loaded by specifying the provider and capability:
+
+```python
+from q.providers import load_client_class
+
+client_class = load_client_class('openai', 'ImageClient')
+client = client_class(api_key, model, **model_args)
+```
+
+## Agents
+
+An **agent** manages conversation state and delegates generation to a client. Two built-in agents are provided:
+
+`ChatAgent[T]` maintains a message history and prepends an optional system prompt:
+
+```python
+ChatAgent[T](client: Client[T], system: str | None = None)
+ChatAgent[T].prompt(text: str) -> T
+```
+
+`BatchAgent[T]` processes multiple inputs concurrently against a shared system prompt, with no conversation history:
+
+```python
+BatchAgent[T](client: Client[T], system: str | None = None)
+BatchAgent[T].batch_prompt(text_list: list[str], n_threads: int = 8) -> list[T]
+```
+
+## Example
+
+This lightweight architecture enables full functionality with minimal code.
+
+```python
+from q.providers.openai import ImageClient
+from q.agents import ChatAgent
+
+client = ImageClient(api_key, "gpt-image-1", quality="high")
+agent = ChatAgent(client)
+image_bytes = await agent.prompt("a cat in space")
+Path("cat.png").write_bytes(image_bytes)
+```
