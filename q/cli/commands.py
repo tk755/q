@@ -24,7 +24,7 @@ from ..agents import ChatAgent
 from ..message import Role
 from .models import Tier, resolve_model_arg
 from .session import SessionManager
-from .terminal import UserError, format_response, qprint
+from .terminal import InputError, format_response, qprint
 
 # region Registry
 
@@ -93,8 +93,8 @@ class Command(Flag):
 class AgentCommand(Command):
     """Base class for commands that prompt an agent."""
 
-    client_str: str = "TextClient"
     tier: Tier
+    client_str: str = "TextClient"
     system: str | None = None
     clip: bool = False
 
@@ -179,6 +179,7 @@ class ExplainCommand(AgentCommand):
     char = "e"
     desc = "explain"
     value_type = ValueType.TEXT
+    required = True
     tier = Tier.HIGH
     system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
 
@@ -227,7 +228,7 @@ class ShellCommand(AgentCommand):
             cmd = os.environ.get("Q_CMD", None)
             exit_code = os.environ.get("Q_EXIT", None)
             if cmd is None or exit_code is None:
-                raise UserError(
+                raise InputError(
                     "q -s without a prompt requires shell integration. Add to ~/.bashrc:\n"
                     '    q() { Q_EXIT=$? Q_CMD=$(fc -ln -1) command q "$@"; }'
                 )
@@ -347,7 +348,7 @@ class LoadCommand(Command):
         if session_id is None:
             self._print_session_list()
         elif not SessionManager.switch_session(session_id):
-            raise UserError(f"invalid session: {session_id}")
+            raise InputError(f"invalid session: {session_id}")
         else:
             qprint(f"Loaded session {session_id}", color="yellow", file=sys.stderr)
 

@@ -9,8 +9,8 @@ from termcolor import colored
 just_fix_windows_console()
 
 
-class UserError(Exception):
-    """User-facing error displayed without traceback."""
+class InputError(Exception):
+    """Input validation error displayed without traceback."""
 
 
 def is_terminal() -> bool:

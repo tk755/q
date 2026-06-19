@@ -1,7 +1,7 @@
 import contextlib
 from enum import Enum
 
-from .terminal import UserError
+from .terminal import InputError
 
 
 class Tier(Enum):
@@ -57,7 +57,7 @@ MODELS = {
 
 def _lookup(provider: str, tier: Tier) -> tuple[str, str, dict]:
     if provider not in MODELS:
-        raise UserError(f"unknown provider: {provider}")
+        raise InputError(f"unknown provider: {provider}")
 
     config = MODELS[provider][tier]
     model = config["model"]
@@ -87,4 +87,4 @@ def resolve_model_arg(arg: str | None, default_tier: Tier, default_provider: str
     if arg in MODELS:
         return _lookup(arg, default_tier)
 
-    raise UserError(f"invalid model: {arg}")
+    raise InputError(f"invalid model: {arg}")

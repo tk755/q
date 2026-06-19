@@ -1,6 +1,6 @@
 # Overview
 
-`q` is a provider-agnostic LLM framework and command-line agent.
+`q` is a provider-agnostic command-line agent and LLM framework.
 
 > I originally built this as a personal CLI tool before Claude Code existed. I still find it more useful for quick shell interactions and running multi-model experiments.
 
@@ -113,11 +113,11 @@ BatchAgent[T](client: Client[T], system: str | None = None)
 BatchAgent[T].batch_prompt(text_list: list[str], n_threads: int = 8) -> list[T]
 ```
 
-<!-- ## Usage
+<!-- ## Examples
 
 This design enables full LLM functionality with minimal code.
 
-### Example 1: Generate an image via OpenAI
+**Example 1:** Generate an image via OpenAI
 
 ```python
 from q.providers.openai import ImageClient
@@ -129,7 +129,7 @@ image_bytes = await agent.prompt("a cat in space")
 Path("cat.png").write_bytes(image_bytes)
 ```
 
-### Example 2: Generate batch text via Anthropic
+**Example 2:** Generate batch text via Anthropic
 
 ```python
 from q.providers.anthropic import TextClient
@@ -141,7 +141,7 @@ inputs = ["How are you?", "¿Cómo estás?", "Comment ça va?"]
 langs = await agent.batch_prompt(inputs)
 ```
 
-### Example 3: Multi-model orchestration
+**Example 3:** Multi-model orchestration
 
 ```python
 from q.providers import load_client_class

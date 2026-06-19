@@ -1,7 +1,7 @@
 import re
 
-from .commands import COMMANDS, OPTIONS, ArgMap, Command, Flag, ValueType, get_default_command
-from .terminal import UserError
+from .commands import COMMANDS, OPTIONS, ArgMap, Command, Flag, HelpCommand, ValueType, get_default_command
+from .terminal import InputError
 
 
 def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str]) -> ArgMap:
@@ -32,13 +32,13 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
         if len(required) == 1:
             consumer = required[0]
         elif len(required) > 1:
-            raise UserError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in required))
+            raise InputError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in required))
         elif len(optional) == 1:
             consumer = optional[0]
         elif len(optional) > 1:
-            raise UserError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in optional))
+            raise InputError(f"ambiguous target for '{pending_tokens[0]}': " + ", ".join(f"-{f.char}" for f in optional))
         else:
-            raise UserError(
+            raise InputError(
                 ", ".join(f"-{f.char}" for f in pending_flags)
                 + f" received invalid argument{('s' if len(pending_tokens) > 1 else '')}: "
                 + ", ".join(f"'{t}'" for t in pending_tokens)
@@ -49,7 +49,7 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
             value = " ".join(pending_tokens)
         else:  # STR or INT
             if len(pending_tokens) > 1:
-                raise UserError(
+                raise InputError(
                     f"-{consumer.char} expects one token but got: " + ", ".join(f"'{t}'" for t in pending_tokens)
                 )
             value = pending_tokens[0]
@@ -57,7 +57,7 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
                 try:
                     value = int(value)
                 except ValueError:
-                    raise UserError(f"-{consumer.char} expects an integer but got: '{pending_tokens[0]}'") from None
+                    raise InputError(f"-{consumer.char} expects an integer but got: '{pending_tokens[0]}'") from None
 
     # resolve flag values
     args: ArgMap = {}
@@ -67,7 +67,7 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
         if f == consumer:
             args[f.char] = value
         elif f.required:
-            raise UserError(f"-{f.char} requires a value")
+            raise InputError(f"-{f.char} requires a value")
         else:
             args[f.char] = f.default
     return args
@@ -100,7 +100,7 @@ def parse(argv: list[str]) -> Command:
 
             duplicates = set(resolved.keys()) & set(args.keys())
             if duplicates:
-                raise UserError(
+                raise InputError(
                     f"duplicate flag{'' if len(duplicates) == 1 else 's'}: " + ", ".join(f"-{k}" for k in duplicates)
                 )
 
@@ -114,7 +114,7 @@ def parse(argv: list[str]) -> Command:
         if is_flag:
             for c in token[1:]:
                 if c not in flag_lookup:
-                    raise UserError(f"unknown flag: -{c}")
+                    raise InputError(f"unknown flag: -{c}")
                 pending_flags.append(flag_lookup[c])
             pos += 1
             continue
@@ -129,8 +129,10 @@ def parse(argv: list[str]) -> Command:
     valid_commands = {f.char for f in COMMANDS}
     commands = [c for c in args if c in valid_commands]
     if len(commands) > 1:
-        raise UserError("multiple commands: " + ", ".join(f"-{c}" for c in commands))
+        raise InputError("multiple commands: " + ", ".join(f"-{c}" for c in commands))
     if not commands:
-        raise UserError("no command specified")
+        if not args:
+            return HelpCommand(args)
+        raise InputError("no command specified")
 
     return flag_lookup[commands[0]](args)
