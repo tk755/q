@@ -108,7 +108,7 @@ class AgentCommand(Command):
 
         # create client dynamically
         client_class = load_client_class(provider, self.client_str)
-        api_key = SessionManager.load_api_key(provider)
+        api_key = self.args.get("k") or SessionManager.load_api_key(provider)
         client = client_class(api_key, model, **model_args)
 
         if "v" in self.args:
@@ -396,6 +396,13 @@ class FileOption(Flag):
 class JsonOption(Flag):
     char = "j"
     desc = "json"
+
+
+class KeyOption(Flag):
+    char = "k"
+    desc = "api key"
+    value_type = ValueType.STR
+    required = True
 
 
 class ModelOption(Flag):
