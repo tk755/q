@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import os
 import platform
-import shutil
 import string
 import subprocess
 import sys
@@ -13,7 +12,6 @@ from enum import Enum
 from pathlib import Path
 
 import distro
-import humanize
 import pyperclip
 from termcolor import colored
 
@@ -21,9 +19,8 @@ from q import __version__
 from q.providers import load_client_class
 
 from ..agents import ChatAgent
-from ..message import Role
 from .models import Tier, resolve_model_arg
-from .session import SessionManager
+from .session import StateManager
 from .terminal import InputError, format_response, qprint
 
 # region Registry
@@ -33,7 +30,7 @@ OPTIONS: list[type[Flag]] = []
 
 
 def get_default_command() -> type[Command]:
-    char = SessionManager.load_command_char()
+    char = StateManager.load_command_char()
     if char:
         for cmd in COMMANDS:
             if cmd.char == char:
@@ -99,16 +96,13 @@ class AgentCommand(Command):
     clip: bool = False
 
     async def execute(self) -> None:
-        if "n" in self.args:
-            SessionManager.new_session()
-
         # resolve provider, model, and model args
-        default_provider = SessionManager.load_default_provider()
+        default_provider = StateManager.load_default_provider()
         provider, model, model_args = resolve_model_arg(self.args.get("m"), self.tier, default_provider)
 
         # create client dynamically
         client_class = load_client_class(provider, self.client_str)
-        api_key = self.args.get("k") or SessionManager.load_api_key(provider)
+        api_key = self.args.get("k") or StateManager.load_api_key(provider)
         client = client_class(api_key, model, **model_args)
 
         if "v" in self.args:
@@ -120,17 +114,17 @@ class AgentCommand(Command):
                     qprint(f"{k}: ", color="green", file=sys.stderr, end="")
                     qprint(f"{v}", file=sys.stderr)
 
-        # resolve system prompt (command's system overrides saved system)
-        system = self.system if self.system is not None else SessionManager.load_system()
-
         # create agent
-        agent = ChatAgent(client, system, SessionManager.load_messages())
+        messages = [] if "n" in self.args else StateManager.load_messages()
+        agent = ChatAgent(client, self.system, messages)
         if "z" in self.args:
             agent.drop_exchanges(self.args["z"])
 
-        # prompt agent and save session
+        # prompt agent
         response = await agent.prompt(self.args[self.char])
-        SessionManager.save_session(agent.system, agent.messages, self.char)
+        
+        # save session
+        StateManager.save_session(self.char, agent.messages)
 
         if "v" in self.args:
             qprint("\nMESSAGES:", color="cyan", file=sys.stderr)
@@ -194,7 +188,7 @@ class CodeCommand(AgentCommand):
 
     @property
     def system(self) -> str:
-        return f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Assume the programming language is {SessionManager.load_code_lang()} unless otherwise specified."
+        return f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Assume the programming language is {StateManager.load_code_lang()} unless otherwise specified."
 
 
 class ShellCommand(AgentCommand):
@@ -336,46 +330,6 @@ class HelpCommand(AgentCommand):
             *flags,
         ]
         return "\n".join(lines)
-
-
-class LoadCommand(Command):
-    char = "l"
-    desc = "load session"
-    value_type = ValueType.INT
-
-    async def execute(self) -> None:
-        session_id = self.args.get(self.char)
-        if session_id is None:
-            self._print_session_list()
-        elif not SessionManager.switch_session(session_id):
-            raise InputError(f"invalid session: {session_id}")
-        else:
-            qprint(f"Loaded session {session_id}", color="yellow", file=sys.stderr)
-
-    def _print_session_list(self) -> None:
-        sessions = SessionManager.list_sessions()
-        if not sessions:
-            qprint("No sessions found.")
-            return
-
-        current_id = SessionManager.load_session_id()
-        term_width = shutil.get_terminal_size().columns
-
-        for s in sessions:
-            age = humanize.naturaltime(s.updated) if s.updated else "unknown"
-            prefix_len = len(f"    {s.id}.  ")
-            suffix_len = len(f" ({age})")
-            max_len = max(20, term_width - prefix_len - suffix_len - 5)
-
-            preview = "(empty)"
-            for msg in reversed(s.messages):
-                if msg.role == Role.USER:
-                    preview = msg.content[:max_len] + "..." if len(msg.content) > max_len else msg.content
-                    break
-
-            line = f"    {s.id}.  {preview} ({age})"
-            color = None if s.id == current_id else "dark_grey"
-            qprint(line, color=color)
 
 
 # region Options

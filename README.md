@@ -33,9 +33,9 @@ Requires Python 3.12+.
 | `-i` | image        | str     | generate/edit an image         | Command |
 | `-j` | json         | -       | output as JSON                 | Option  |
 | `-k` | api key      | str     | override API key               | Option  |
-| `-l` | load session | - / int | list all / load session by id  | Command |
+| `-l` |              |         |                                |         |
 | `-m` | model        | str     | override model/provider        | Option  |
-| `-n` | new session  | -       | start a new session            | Option  |
+| `-n` | new session  | -       | clear the session history      | Option  |
 | `-o` | output       | str     | output file                    | Option  |
 | `-p` |              |         |                                |         |
 | `-q` |              |         |                                |         |
@@ -48,6 +48,10 @@ Requires Python 3.12+.
 | `-x` | execute      | -       | execute a shell command        | Option  |
 | `-y` |              |         |                                |         |
 | `-z` | undo         | - / int | undo exchanges (default 1)     | Option  |
+
+## Sessions
+
+Each terminal or script that runs `q` maintains an isolated **session** that persists conversation history across calls. Use `-n` to clear the session history for a new conversation or one-shot prompt. Sessions are automatically deleted when the parent shell process exits.
 
 # Library Usage
 

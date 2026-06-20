@@ -1,14 +1,14 @@
 import contextlib
-import json
 import os
-from datetime import UTC, datetime
+import sys
 from pathlib import Path
 
+import psutil
 from dotenv import dotenv_values, set_key
 from pydantic import BaseModel, Field
 
 from ..message import Message
-from .terminal import qinput
+from .terminal import qinput, qprint
 
 RESOURCES_DIR = Path.home() / ".q"
 CONFIG_PATH = RESOURCES_DIR / "config.json"
@@ -21,187 +21,115 @@ class Config(BaseModel):
 
     default_provider: str = "openai"
     code_lang: str = "python"
-    current_session_id: int = 1
 
 
 class Session(BaseModel):
     """Conversation session with message history."""
 
-    id: int
-    system: str | None = None
-    messages: list[Message] = Field(default_factory=list)
+    pid_start: float
     command_char: str | None = None
-    created: datetime | None = None
-    updated: datetime | None = None
+    messages: list[Message] = Field(default_factory=list)
 
 
-class SessionManager:
-    """Stateless manager for sessions, config, and secrets."""
+class StateManager:
+    """Stateless manager for sessions, config, and keys."""
 
-    # region Public Interface
+    # region Sessions
 
-    # Config
+    @classmethod
+    def load_session(cls) -> Session:
+        """Load current session from disk, or create a new one."""
+        pid = os.getppid()
+        pid_start = cls._pid_start(pid)
+        session = cls._pid_session(pid)
+        if session and session.pid_start == pid_start:
+            return session
+        return Session(pid_start=pid_start)
+
+    @classmethod
+    def load_command_char(cls) -> str | None:
+        """Load last command char from current session."""
+        session = cls.load_session()
+        return session.command_char
+
+    @classmethod
+    def load_messages(cls) -> list[Message]:
+        """Load messages from current session."""
+        session = cls.load_session()
+        return session.messages
+
+    @classmethod
+    def save_session(cls, command_char: str | None, messages: list[Message]) -> None:
+        """Save current session to disk."""
+        pid = os.getppid()
+        session = Session(pid_start=cls._pid_start(pid), command_char=command_char, messages=messages)
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+        (SESSIONS_DIR / f"{pid}.json").write_text(session.model_dump_json(indent=2))
+
+    @classmethod
+    def reap_sessions(cls) -> None:
+        """Delete stale sessions whose process has exited or been replaced."""
+        for path in SESSIONS_DIR.glob("*.json"):
+            if not path.stem.isdigit():
+                continue
+            pid = int(path.stem)
+            session = cls._pid_session(pid)
+            if not session or session.pid_start != cls._pid_start(pid):
+                path.unlink(missing_ok=True)
+
+    @classmethod
+    def _pid_session(cls, pid: int) -> Session | None:
+        """Get session for a process, or None if no such process."""
+        with contextlib.suppress(Exception):
+            return Session.model_validate_json((SESSIONS_DIR / f"{pid}.json").read_text())
+        return None
+
+    @classmethod
+    def _pid_start(cls, pid: int) -> float | None:
+        """Get start time for a process, or None if no such process."""
+        with contextlib.suppress(psutil.Error):
+            return round(psutil.Process(pid).create_time(), 2)
+        return None
+
+    # region Config
+
+    @classmethod
+    def load_config(cls) -> Config:
+        """Load config from disk, or create default if missing."""
+        if not CONFIG_PATH.exists():
+            RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
+            CONFIG_PATH.write_text(Config().model_dump_json(indent=2))
+        try:
+            return Config.model_validate_json(CONFIG_PATH.read_text())
+        except Exception:
+            qprint(f"{CONFIG_PATH} is invalid, using defaults instead", color="yellow", file=sys.stderr)
+            return Config()
 
     @classmethod
     def load_default_provider(cls) -> str:
         """Load default provider from config."""
-        return cls._read_config().default_provider
+        return cls.load_config().default_provider
 
     @classmethod
     def load_code_lang(cls) -> str:
         """Load code language from config."""
-        return cls._read_config().code_lang
+        return cls.load_config().code_lang
 
-    # Secrets
+    # region Keys
 
     @classmethod
     def load_api_key(cls, provider: str) -> str:
-        """Load API key. Prompts and saves if missing."""
-        secrets = cls._read_secrets()
-        provider_lower = provider.lower()
-
-        if provider_lower not in secrets:
+        """Load API key from .env file. Prompts and saves if missing."""
+        key = dotenv_values(ENV_PATH).get(provider.lower())
+        if not key:
             key = qinput(f"{provider} API key not found. Enter key: ", secret=True).strip()
             # TODO: add load_provider_module(provider).validate_key(key)
-            cls._write_secret(provider_lower, key)
-            return key
-
-        return secrets[provider_lower]
-
-    # Session data
+            cls.save_api_key(provider, key)
+        return key
 
     @classmethod
-    def load_system(cls) -> str | None:
-        """Load system prompt from active session."""
-        session = cls._read_session(cls._read_config().current_session_id)
-        return session.system if session else None
-
-    @classmethod
-    def load_messages(cls) -> list[Message] | None:
-        """Load messages from active session."""
-        session = cls._read_session(cls._read_config().current_session_id)
-        return session.messages if session else None
-
-    @classmethod
-    def load_command_char(cls) -> str | None:
-        """Load last command char from active session."""
-        session = cls._read_session(cls._read_config().current_session_id)
-        return session.command_char if session else None
-
-    @classmethod
-    def save_session(cls, system: str | None, messages: list[Message], command_char: str | None = None) -> None:
-        """Creates or updates active session with system prompt and messages."""
-        session_id = cls._read_config().current_session_id
-        session = cls._read_session(session_id)
-        now = datetime.now(UTC)
-
-        if session is None:
-            session = Session(id=session_id, system=system, messages=messages, command_char=command_char, created=now, updated=now)
-        else:
-            session.system = system
-            session.messages = messages
-            session.command_char = command_char
-            session.updated = now
-
-        cls._write_session(session)
-
-    # Session management
-
-    @classmethod
-    def load_session_id(cls) -> int:
-        """Load active session ID."""
-        return cls._read_config().current_session_id
-
-    @classmethod
-    def list_sessions(cls) -> list[Session]:
-        """Load all sessions from disk, sorted by ID."""
-        if not SESSIONS_DIR.exists():
-            return []
-        sessions = []
-        for path in sorted(SESSIONS_DIR.glob("*.json"), key=lambda p: int(p.stem)):
-            try:
-                sessions.append(Session.model_validate_json(path.read_text()))
-            except Exception:
-                continue
-        return sessions
-
-    @classmethod
-    def switch_session(cls, session_id: int) -> bool:
-        """Switch active session. Returns False if not found."""
-        if cls._read_session(session_id) is None:
-            return False
-        cls._save_active_session_id(session_id)
-        return True
-
-    @classmethod
-    def new_session(cls) -> None:
-        """Create new session ID. Session file created on save_session()."""
-        cls._ensure_dirs()
-        existing = [int(p.stem) for p in SESSIONS_DIR.glob("*.json") if p.stem.isdigit()]
-        cls._save_active_session_id(max(existing, default=0) + 1)
-
-    # region Private Helpers
-
-    @classmethod
-    def _ensure_dirs(cls) -> None:
-        """Create resource directories if needed."""
+    def save_api_key(cls, provider: str, key: str) -> None:
+        """Save API key to .env file."""
         RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
-        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-
-    @classmethod
-    def _read_config(cls) -> Config:
-        """Read config, merging file overrides with defaults."""
-        if not CONFIG_PATH.exists():
-            return Config()
-        try:
-            return Config.model_validate_json(CONFIG_PATH.read_text())
-        except Exception:
-            return Config()
-
-    @classmethod
-    def _save_active_session_id(cls, session_id: int) -> None:
-        """Update current_session_id in config file, preserving other values."""
-        cls._ensure_dirs()
-        raw = {}
-        if CONFIG_PATH.exists():
-            with contextlib.suppress(json.JSONDecodeError):
-                raw = json.loads(CONFIG_PATH.read_text())
-        raw["current_session_id"] = session_id
-        CONFIG_PATH.write_text(json.dumps(raw, indent=2))
-
-    @classmethod
-    def _read_session(cls, session_id: int) -> Session | None:
-        """Read session from disk."""
-        path = SESSIONS_DIR / f"{session_id}.json"
-        if not path.exists():
-            return None
-        try:
-            return Session.model_validate_json(path.read_text())
-        except Exception:
-            return None
-
-    @classmethod
-    def _write_session(cls, session: Session) -> None:
-        """Write session to disk."""
-        cls._ensure_dirs()
-        path = SESSIONS_DIR / f"{session.id}.json"
-        path.write_text(session.model_dump_json(indent=2))
-
-    @classmethod
-    def _read_secrets(cls) -> dict[str, str]:
-        """Read secrets from .env file, with environment variable overrides."""
-        if not ENV_PATH.exists():
-            return {}
-        secrets = {}
-        for key, value in dotenv_values(ENV_PATH).items():
-            if value:
-                secrets[key.lower()] = os.environ.get(key) or value
-        return secrets
-
-    @classmethod
-    def _write_secret(cls, provider: str, key: str) -> None:
-        """Write secret to .env file."""
-        cls._ensure_dirs()
-        if not ENV_PATH.exists():
-            ENV_PATH.touch(mode=0o600)
+        ENV_PATH.touch(mode=0o600, exist_ok=True)
         set_key(ENV_PATH, provider.lower(), key)
