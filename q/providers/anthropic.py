@@ -63,4 +63,4 @@ class TextClient(AnthropicClient[str]):
             kwargs["system"] = system_prompt
 
         response = await self._async_client.messages.create(**kwargs)
-        return response.content[0].text
+        return "".join(block.text for block in response.content if block.type == "text")
