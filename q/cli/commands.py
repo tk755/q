@@ -188,7 +188,8 @@ class CodeCommand(AgentCommand):
 
     @property
     def system(self) -> str:
-        return f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Assume the programming language is {StateManager.load_code_lang()} unless otherwise specified."
+        code_lang = self.args.get("l") or StateManager.load_code_lang()
+        return f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Use the {code_lang} programming language."
 
 
 class ShellCommand(AgentCommand):
@@ -358,6 +359,12 @@ class KeyOption(Flag):
     desc = "api key"
     value_type = ValueType.STR
     required = True
+
+
+class CodeLangOption(Flag):
+    char = "l"
+    desc = "code lang"
+    value_type = ValueType.STR
 
 
 class ModelOption(Flag):

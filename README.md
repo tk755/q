@@ -20,34 +20,34 @@ Requires Python 3.12+.
 
 ## Flag Reference
 
-| Flag | Name         | Arg     | Description                    | Type    |
-| ---- | ------------ | ------- | ------------------------------ | ------: |
-| `-a` | agent        |         | *[reserved for future use]*    | Command |
-| `-b` | batch        |         | *[reserved for future use]*    |         |
-| `-c` | code         | str     | generate code                  | Command |
-| `-d` | directory    | - / str | add a directory to context     | Option  |
-| `-e` | explain      | - / str | explain code or text           | Command |
-| `-f` | file         | str     | read input from file           | Option  |
-| `-g` |              |         |                                |         |
-| `-h` | help         | - / str | help message / help agent      | Command |
-| `-i` | image        | str     | generate/edit an image         | Command |
-| `-j` | json         | -       | output as JSON                 | Option  |
-| `-k` | api key      | str     | override API key               | Option  |
-| `-l` |              |         |                                |         |
-| `-m` | model        | str     | override model/provider        | Option  |
-| `-n` | new session  | -       | clear the session history      | Option  |
-| `-o` | output       | str     | output file                    | Option  |
-| `-p` |              |         |                                |         |
-| `-q` |              |         |                                |         |
-| `-r` | rag          | - / str | *[reserved for future use]*    | Command |
-| `-s` | shell        | - / str | generate a shell command       | Command |
-| `-t` | text         | str     | generate text                  | Command |
-| `-u` | user command | str     | *[reserved for future use]*    | Command |
-| `-v` | verbose      | -       | debug logging                  | Option  |
-| `-w` | web search   | str     | search the web                 | Command |
-| `-x` | execute      | -       | execute a shell command        | Option  |
-| `-y` |              |         |                                |         |
-| `-z` | undo         | - / int | undo exchanges (default 1)     | Option  |
+| Flag | Name         | Arg     | Description                       | Type    |
+| ---- | ------------ | ------- | --------------------------------- | ------: |
+| `-a` | agent        |         | *[reserved for future use]*       | Command |
+| `-b` | batch        |         | *[reserved for future use]*       | Command |
+| `-c` | code         | str     | generate code                     | Command |
+| `-d` | directory    | - / str | add a directory to context        | Option  |
+| `-e` | explain      | - / str | explain code or text              | Command |
+| `-f` | file         | str     | read input from file              | Option  |
+| `-g` |              |         |                                   |         |
+| `-h` | help         | - / str | help message / agent              | Command |
+| `-i` | image        | str     | generate/edit an image            | Command |
+| `-j` | json         | -       | output as JSON                    | Option  |
+| `-k` | api key      | str     | override API key                  | Option  |
+| `-l` | code lang    | str     | override code generation language | Option  |
+| `-m` | model        | str     | override model/provider           | Option  |
+| `-n` | new session  | -       | clear the session history         | Option  |
+| `-o` | output       | str     | output file                       | Option  |
+| `-p` |              |         |                                   |         |
+| `-q` |              |         |                                   |         |
+| `-r` | rag          | - / str | *[reserved for future use]*       | Command |
+| `-s` | shell        | - / str | generate a shell command          | Command |
+| `-t` | text         | str     | generate text                     | Command |
+| `-u` | user command | str     | *[reserved for future use]*       | Command |
+| `-v` | verbose      | -       | debug logging                     | Option  |
+| `-w` | web          | str     | search the web                    | Command |
+| `-x` | execute      | -       | execute a shell command           | Option  |
+| `-y` |              |         |                                   |         |
+| `-z` | undo         | - / int | undo exchanges (default 1)        | Option  |
 
 ## Sessions
 
