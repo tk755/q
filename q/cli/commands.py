@@ -97,7 +97,7 @@ class AgentCommand(Command):
 
     async def execute(self) -> None:
         # resolve provider, model, and model args
-        default_provider = StateManager.load_default_provider()
+        default_provider = StateManager.default_provider()
         provider, model, model_args = resolve_model_arg(self.args.get("m"), self.tier, default_provider)
 
         # create client dynamically
@@ -188,7 +188,7 @@ class CodeCommand(AgentCommand):
 
     @property
     def system(self) -> str:
-        code_lang = self.args.get("l") or StateManager.load_code_lang()
+        code_lang = self.args.get("l") or StateManager.default_code_lang()
         return f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Use the {code_lang} programming language."
 
 
@@ -264,7 +264,7 @@ class WebCommand(AgentCommand):
     required = True
     tier = Tier.LOW
     client_str = "WebClient"
-    system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context, background, or links. The response should be less than a single sentence. Always search the internet."
+    system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context or background. The response should be less than a single sentence. Always search the internet."
 
 
 class ImageCommand(AgentCommand):
@@ -296,9 +296,11 @@ class HelpCommand(AgentCommand):
         cli_dir = Path(__file__).parent
         source_code = "\n\n".join((cli_dir / name).read_text() for name in Path(cli_dir).glob("*.py"))
         return (
-            "You are `q`, a command-line LLM tool. Answer questions about usage based on the source code."
+            "You are `q`, and this is your source code."
             f"\n\n{source_code}\n\n"
-            "Be extremely concise. Answer in one line. Focus on usage."
+            "Use the above source code to answer questions about CLI usage. "
+            "Focus on CLI usage, not implementation details. "
+            "Be extremely concise. Answer the question directly without providing additional context. "
             "Always surround code snippets, commands, flags, and paths with backticks."
         )
 
@@ -319,7 +321,7 @@ class HelpCommand(AgentCommand):
             flags.append(colored(flag_str, command_color if f in COMMANDS else "dark_grey"))
 
         lines = [
-            f"q {__version__} - a command line programming agent",
+            f"q {__version__} - an expressive command-line utility for LLMs",
             "",
             "Usage: q [-flag [value]] ...",
             "",
@@ -336,22 +338,22 @@ class HelpCommand(AgentCommand):
 # region Options
 
 
-class DirectoryOption(Flag):
-    char = "d"
-    desc = "directory"
-    value_type = ValueType.STR
+# class DirectoryOption(Flag):
+#     char = "d"
+#     desc = "directory"
+#     value_type = ValueType.STR
 
 
-class FileOption(Flag):
-    char = "f"
-    desc = "file"
-    value_type = ValueType.STR
-    required = True
+# class FileOption(Flag):
+#     char = "f"
+#     desc = "file"
+#     value_type = ValueType.STR
+#     required = True
 
 
-class JsonOption(Flag):
-    char = "j"
-    desc = "json"
+# class JsonOption(Flag):
+#     char = "j"
+#     desc = "json"
 
 
 class KeyOption(Flag):
@@ -365,6 +367,7 @@ class CodeLangOption(Flag):
     char = "l"
     desc = "code lang"
     value_type = ValueType.STR
+    required = True
 
 
 class ModelOption(Flag):
@@ -381,7 +384,7 @@ class NewSessionOption(Flag):
 
 class OutputOption(Flag):
     char = "o"
-    desc = "output"
+    desc = "output path"
     value_type = ValueType.STR
     required = True
 

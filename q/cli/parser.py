@@ -96,15 +96,15 @@ def parse(argv: list[str]) -> Command:
         # resolve at boundary (new flag or end)
         is_flag = flag_parsing_enabled and token and bool(re.match(r"^-[a-z]+$", token))
         if is_flag or at_end:
-            resolved = _resolve_pending(pending_flags, pending_tokens)
+            resolved_args = _resolve_pending(pending_flags, pending_tokens)
 
-            duplicates = set(resolved.keys()) & set(args.keys())
+            duplicates = set(resolved_args.keys()) & set(args.keys())
             if duplicates:
                 raise InputError(
                     f"duplicate flag{'' if len(duplicates) == 1 else 's'}: " + ", ".join(f"-{k}" for k in duplicates)
                 )
 
-            args.update(resolved)
+            args.update(resolved_args)
             pending_flags, pending_tokens = [], []
 
         if at_end:

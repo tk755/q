@@ -19,7 +19,7 @@ ENV_PATH = RESOURCES_DIR / ".env"
 class Config(BaseModel):
     """Config schema and defaults."""
 
-    default_provider: str = "openai"
+    provider: str = "openai"
     code_lang: str = "python"
 
 
@@ -106,13 +106,13 @@ class StateManager:
             return Config()
 
     @classmethod
-    def load_default_provider(cls) -> str:
+    def default_provider(cls) -> str:
         """Load default provider from config."""
-        return cls.load_config().default_provider
+        return cls.load_config().provider
 
     @classmethod
-    def load_code_lang(cls) -> str:
-        """Load code language from config."""
+    def default_code_lang(cls) -> str:
+        """Load default code language from config."""
         return cls.load_config().code_lang
 
     # region Keys
