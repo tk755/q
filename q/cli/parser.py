@@ -1,6 +1,6 @@
 import re
 
-from .commands import COMMANDS, OPTIONS, ArgMap, Command, Flag, HelpCommand, ValueType, get_default_command
+from .commands import COMMAND_MAP, FLAG_MAP, ArgMap, Command, Flag, HelpCommand, ValueType, get_default_command
 from .terminal import InputError
 
 
@@ -75,8 +75,6 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
 
 def parse(argv: list[str]) -> Command:
     """Parse command-line arguments into an executable command."""
-    flag_lookup = {f.char: f for f in COMMANDS + OPTIONS}
-
     args: ArgMap = {}
     pending_flags: list[type[Flag]] = []
     pending_tokens: list[str] = []
@@ -113,9 +111,9 @@ def parse(argv: list[str]) -> Command:
         # accumulate flags
         if is_flag:
             for c in token[1:]:
-                if c not in flag_lookup:
+                if c not in FLAG_MAP:
                     raise InputError(f"unknown flag: -{c}")
-                pending_flags.append(flag_lookup[c])
+                pending_flags.append(FLAG_MAP[c])
             pos += 1
             continue
 
@@ -126,8 +124,7 @@ def parse(argv: list[str]) -> Command:
         pos += 1
 
     # validate commands
-    valid_commands = {f.char for f in COMMANDS}
-    commands = [c for c in args if c in valid_commands]
+    commands = [c for c in args if c in COMMAND_MAP]
     if len(commands) > 1:
         raise InputError("multiple commands: " + ", ".join(f"-{c}" for c in commands))
     if not commands:
@@ -135,4 +132,4 @@ def parse(argv: list[str]) -> Command:
             return HelpCommand(args)
         raise InputError("no command specified")
 
-    return flag_lookup[commands[0]](args)
+    return COMMAND_MAP[commands[0]](args)

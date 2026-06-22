@@ -25,16 +25,15 @@ from .terminal import InputError, format_response, qprint
 
 # region Registry
 
-COMMANDS: list[type[Command]] = []
-OPTIONS: list[type[Flag]] = []
+
+FLAG_MAP: dict[str, type[Flag]] = {}
+COMMAND_MAP: dict[str, type[Command]] = {}
 
 
 def get_default_command() -> type[Command]:
     char = StateManager.load_command_char()
-    if char:
-        for cmd in COMMANDS:
-            if cmd.char == char:
-                return cmd
+    if char in COMMAND_MAP:
+        return COMMAND_MAP[char]
     return TextCommand
 
 
@@ -55,7 +54,7 @@ class ValueType(Enum):
 
 
 class Flag(ABC):
-    """Base class for CLI flags. Subclasses auto-register to OPTIONS."""
+    """Base class for CLI flags."""
 
     char: str
     desc: str
@@ -64,31 +63,30 @@ class Flag(ABC):
     default: Value = None
 
     def __init_subclass__(cls, **kwargs):
-        """Auto-register subclass to OPTIONS if it defines a char."""
+        """Auto-register subclass to FLAG_MAP if it defines a char."""
         super().__init_subclass__(**kwargs)
         if hasattr(cls, "char"):
-            OPTIONS.append(cls)
+            FLAG_MAP[cls.char] = cls
 
 
 class Command(Flag):
-    """Base class for CLI commands. Subclasses auto-register to COMMANDS."""
+    """Base class for CLI commands."""
 
     def __init__(self, args: ArgMap):
         self.args = args
 
     def __init_subclass__(cls, **kwargs):
-        """Move subclass from OPTIONS to COMMANDS if it defines a char."""
+        """Auto-register subclass to COMMAND_MAP if it defines a char."""
         super().__init_subclass__(**kwargs)
         if hasattr(cls, "char"):
-            OPTIONS.remove(cls)
-            COMMANDS.append(cls)
+            COMMAND_MAP[cls.char] = cls
 
     @abstractmethod
     async def execute(self) -> None: ...
 
 
-class AgentCommand(Command):
-    """Base class for commands that prompt an agent."""
+class LLMCommand(Command):
+    """Base class for commands that prompt an LLM."""
 
     tier: Tier
     client_str: str = "TextClient"
@@ -106,7 +104,7 @@ class AgentCommand(Command):
         client = client_class(api_key, model, **model_args)
 
         if "v" in self.args:
-            qprint("MODEL PARAMETERS:", color="cyan", file=sys.stderr)
+            qprint("MODEL PARAMETERS:", color="light_blue", file=sys.stderr)
             qprint("model: ", color="green", file=sys.stderr, end="")
             qprint(f"{client.model} ({provider})", file=sys.stderr)
             if client.model_args:
@@ -122,12 +120,12 @@ class AgentCommand(Command):
 
         # prompt agent
         response = await agent.prompt(self.args[self.char])
-        
+
         # save session
         StateManager.save_session(self.char, agent.messages)
 
         if "v" in self.args:
-            qprint("\nMESSAGES:", color="cyan", file=sys.stderr)
+            qprint("\nMESSAGES:", color="light_blue", file=sys.stderr)
             if agent.system:
                 qprint("system: ", color="green", file=sys.stderr, end="")
                 qprint(agent.system, file=sys.stderr)
@@ -149,7 +147,7 @@ class AgentCommand(Command):
         else:
             if "v" not in self.args:
                 qprint(response)
-            
+
             # copy output to clipboard
             if self.clip:
                 with contextlib.suppress(pyperclip.PyperclipException):
@@ -160,27 +158,27 @@ class AgentCommand(Command):
 # region Commands
 
 
-class TextCommand(AgentCommand):
+class TextCommand(LLMCommand):
     char = "t"
-    desc = "text"
+    desc = "generate text"
     value_type = ValueType.TEXT
     required = True
     tier = Tier.MED
     system = ""
 
 
-class ExplainCommand(AgentCommand):
+class ExplainCommand(LLMCommand):
     char = "e"
-    desc = "explain"
+    desc = "explain code/concept"
     value_type = ValueType.TEXT
     required = True
     tier = Tier.HIGH
     system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
 
 
-class CodeCommand(AgentCommand):
+class CodeCommand(LLMCommand):
     char = "c"
-    desc = "code"
+    desc = "generate code"
     value_type = ValueType.TEXT
     required = True
     tier = Tier.HIGH
@@ -192,9 +190,9 @@ class CodeCommand(AgentCommand):
         return f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Use the {code_lang} programming language."
 
 
-class ShellCommand(AgentCommand):
+class ShellCommand(LLMCommand):
     char = "s"
-    desc = "shell"
+    desc = "generate shell command"
     value_type = ValueType.TEXT
     required = False
     tier = Tier.MED
@@ -257,9 +255,9 @@ class ShellCommand(AgentCommand):
             super().process_response(response)
 
 
-class WebCommand(AgentCommand):
+class WebCommand(LLMCommand):
     char = "w"
-    desc = "web"
+    desc = "search the web"
     value_type = ValueType.TEXT
     required = True
     tier = Tier.LOW
@@ -267,9 +265,9 @@ class WebCommand(AgentCommand):
     system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context or background. The response should be less than a single sentence. Always search the internet."
 
 
-class ImageCommand(AgentCommand):
+class ImageCommand(LLMCommand):
     char = "i"
-    desc = "image"
+    desc = "generate image"
     value_type = ValueType.TEXT
     required = True
     tier = Tier.MED
@@ -284,12 +282,73 @@ class ImageCommand(AgentCommand):
         qprint(f"Image saved to {path}", color="yellow", file=sys.stderr)
 
 
-class HelpCommand(AgentCommand):
+class HelpCommand(LLMCommand):
     char = "h"
-    desc = "help"
+    desc = "get help with q"
     value_type = ValueType.TEXT
     required = False
     tier = Tier.LOW
+
+    @staticmethod
+    def help_text(verbose: bool = False) -> str:
+        accent_color = "light_blue"
+        dim_color = "dark_grey"
+
+        type_col_len = max(len(flag.value_type.value or "") for flag in FLAG_MAP.values()) + 2
+        desc_col_len = max(len(flag.desc) for flag in FLAG_MAP.values()) if verbose else 0
+        tier_col_len = max(len(flag.tier.value) for flag in FLAG_MAP.values() if hasattr(flag, "tier"))
+
+        command_rows, option_rows = [], []
+        for flag in sorted(FLAG_MAP.values(), key=lambda f: f.char):
+            char = colored(f"-{flag.char}", accent_color)
+
+            accent_word = flag.__name__.removesuffix("Command").removesuffix("Option").lower()
+            desc = flag.desc.ljust(desc_col_len).replace(accent_word, colored(accent_word, accent_color))
+
+            value_type = flag.value_type.value or ""
+            if value_type:
+                if flag.default:
+                    value_type += f"={flag.default}"
+                value_type = f"<{value_type}>" if flag.required else f"[{value_type}]"
+            value_type = colored(value_type.ljust(type_col_len), dim_color)
+
+            row = f"  {char}  {value_type}  {desc}"
+            if verbose:
+                if hasattr(flag, "tier"):
+                    tier = colored(flag.tier.value.rjust(tier_col_len), dim_color)
+                    row += f"  {tier}"
+
+            row = row.rstrip()
+
+            if issubclass(flag, Command):
+                command_rows.append(row)
+            else:
+                option_rows.append(row)
+
+        lines = [
+            f"{colored('Version:', attrs=['bold'])} {__version__}",
+            f"{colored('Usage:', attrs=['bold'])} q [{colored('-flag', accent_color)} [{colored('value', dim_color)}]] ...",
+            "",
+            "  Flags can be combined: -sx = -s -x",
+            "  Use -- to disable remaining flag parsing.",
+            "  Commands are mutually exclusive.",
+            "",
+            colored("Commands:", attrs=["bold"]),
+            *command_rows,
+            "",
+            colored("Options:", attrs=["bold"]),
+            *option_rows,
+        ]
+
+        if verbose:
+            unused_flags = {f"-{c}" for c in string.ascii_lowercase if c not in FLAG_MAP}
+            lines += [
+                "",
+                colored("Unused:", attrs=["bold"]),
+                "  " + colored(", ".join(sorted(unused_flags)), accent_color),
+            ]
+
+        return "\n".join(lines)
 
     @property
     def system(self) -> str:
@@ -305,79 +364,37 @@ class HelpCommand(AgentCommand):
         )
 
     async def execute(self) -> None:
-        if self.args.get(self.char):
-            await super().execute()
+        if not self.args.get(self.char):
+            qprint(self.help_text("v" in self.args))
         else:
-            qprint(self._help_text())
-
-    def _help_text(self) -> str:
-        command_color = "cyan"
-        flags = []
-        for f in sorted(COMMANDS + OPTIONS, key=lambda f: f.char):
-            flag_arg = f.value_type.value or ""
-            if flag_arg:
-                flag_arg = f"<{flag_arg}>" if f.required else f"[{flag_arg}]"
-            flag_str = f"    -{f.char}  {f.desc} {flag_arg}"
-            flags.append(colored(flag_str, command_color if f in COMMANDS else "dark_grey"))
-
-        lines = [
-            f"q {__version__} - an expressive command-line utility for LLMs",
-            "",
-            "Usage: q [-flag [value]] ...",
-            "",
-            "  Flags can be combined: -sx = -s -x",
-            "  Use -- to disable remaining flag parsing.",
-            f"  One {colored('command', command_color)} is required.",
-            "",
-            "Flags:",
-            *flags,
-        ]
-        return "\n".join(lines)
+            await super().execute()
 
 
 # region Options
 
 
-# class DirectoryOption(Flag):
-#     char = "d"
-#     desc = "directory"
-#     value_type = ValueType.STR
-
-
-# class FileOption(Flag):
-#     char = "f"
-#     desc = "file"
-#     value_type = ValueType.STR
-#     required = True
-
-
-# class JsonOption(Flag):
-#     char = "j"
-#     desc = "json"
-
-
 class KeyOption(Flag):
     char = "k"
-    desc = "api key"
+    desc = "override API key"
     value_type = ValueType.STR
     required = True
 
 
-class CodeLangOption(Flag):
+class LanguageOption(Flag):
     char = "l"
-    desc = "code lang"
+    desc = "override code language"
     value_type = ValueType.STR
     required = True
 
 
 class ModelOption(Flag):
     char = "m"
-    desc = "model"
+    desc = "override model"
     value_type = ValueType.STR
     required = True
 
 
-class NewSessionOption(Flag):
+class NewOption(Flag):
     char = "n"
     desc = "new session"
 
@@ -391,16 +408,76 @@ class OutputOption(Flag):
 
 class VerboseOption(Flag):
     char = "v"
-    desc = "verbose"
+    desc = "verbose output"
 
 
 class ExecuteOption(Flag):
     char = "x"
-    desc = "execute"
+    desc = "execute shell command"
 
 
 class UndoOption(Flag):
     char = "z"
-    desc = "undo"
+    desc = "undo exchanges"
     value_type = ValueType.INT
     default = 1
+
+
+# region Future Flags
+
+"""
+# TODO: p2
+class AgentCommand(Command):
+    char = "a"
+    desc = "delegate to agent"
+    value_type = ValueType.STR
+    required = True
+    tier = Tier.HIGH
+
+
+# TODO: p1
+class BatchOption(Flag):
+    char = "b"
+    desc = "batch process inputs"
+    value_type = ValueType.STR
+    required = True
+
+
+# TODO: p0
+class DirectoryOption(Flag):
+    char = "d"
+    desc = "add directory to context"
+    value_type = ValueType.STR
+
+
+# TODO: p0
+class FileOption(Flag):
+    char = "f"
+    desc = "add file to context"
+    value_type = ValueType.STR
+    required = True
+
+
+# TODO: p1
+class JsonOption(Flag):
+    char = "j"
+    desc = "output in JSON"
+
+
+# TODO: p2
+class RetrievalCommand(Command):
+    char = "r"
+    desc = "retrieval-augmented generation"
+    value_type = ValueType.STR
+    required = True
+    tier = Tier.MED
+
+
+# TODO: p2
+class UserCommand(Command):
+    char = "u"
+    desc = "user command"
+    value_type = ValueType.STR
+    required = True
+    tier = Tier.MED
+"""

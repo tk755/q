@@ -69,6 +69,7 @@ def resolve_model_arg(arg: str | None, default_tier: Tier, default_provider: str
     """Return (provider, model_name, model_args)."""
     if arg is None:
         return _lookup(default_provider, default_tier)
+    arg = arg.lower()
 
     # provider:value
     if ":" in arg:

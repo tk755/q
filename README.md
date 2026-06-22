@@ -6,7 +6,7 @@
 
 # Installation
 
-Install using any pip-compatible package manager (e.g. `pip`, `pipx`, `uv`, etc.):
+Install using any pip-compatible package manager (e.g. `pip`, `pipx`, `uv`, etc.).
 
 ```bash
 pipx install q-bot
@@ -20,20 +20,20 @@ Requires Python 3.12+.
 
 Every character from `a` to `z` maps to a command or option. A **command** performs a specific LLM task, while an **option** modifies a command's behavior. Together, they can express a wide variety of LLM operations precisely and concisely.
 
-Run `q -h` or see the [Flag Reference](#flag-reference) below for a complete list of commands and options.
+Run `q -h` to see all commands and options.
 
 ## Examples
 
 ### Shell Command Generation and Execution
 
-Use `-s` to generate shell commands and copy them to the clipboard. `q` automatically detects the operating system and shell to generate compatible commands:
+Use `-s` to generate shell commands and copy them to the clipboard. `q` automatically detects the operating system and shell to generate compatible commands.
 
 ```bash
 $ q -s auto hide the dock # on macOS
 defaults write com.apple.dock autohide -bool true; killall Dock
 ```
 
-Use `-x` to automatically execute the generated command:
+Use `-x` to automatically execute the generated command.
 
 ```bash
 $ q -sx count number of commits
@@ -41,7 +41,7 @@ $ q -sx count number of commits
 95
 ```
 
-With no prompt, `-s` re-runs the last shell command, reads the error, and fixes it:
+With no prompt, `-s` re-runs the last shell command, reads the error, and fixes it.
 
 ```bash
 $ git push
@@ -56,21 +56,21 @@ Branch 'dev' set up to track remote branch 'dev' from 'origin'.
 
 ### Code Generation
 
-Use `-c` to generate idiomatic code snippets and copy them to the clipboard. The default language is set in the [config](#configuration):
+Use `-c` to generate idiomatic code snippets and copy them to the clipboard. The default language is set in the [config](#configuration).
 
 ```bash
 $ q -c square all keys in a dict
 squared_keys = {k**2: v for k, v in d.items()}
 ```
 
-Use `-l` to specify the language, and `-o` to write the output to a file:
+Use `-l` to specify the language, and `-o` to write the output to a file.
 
 ```bash
 $ q -c binary search -l rust -o search.rs
 Response saved to search.rs
 ```
 
-<!-- Use `-f` to provide an input file as context:
+<!-- Use `-f` to provide an input file as context.
 
 ```bash
 $ q -c add docstrings to all functions -f lib.py -o lib_doc.py
@@ -79,7 +79,7 @@ Response saved to lib_doc.py
 
 ### Image <!--Editing and -->Generation
 
-Use `-i` to generate an image:
+Use `-i` to generate an image.
 
 ```bash
 $ q -i a cat in space
@@ -88,7 +88,7 @@ Image saved to q_a_cat_in_space.png
 
 ### Web Search
 
-Use `-w` to search the web for real-time information with source attribution:
+Use `-w` to search the web for real-time information with source attribution.
 
 ```bash
 $ q -w nba champions
@@ -97,7 +97,7 @@ The New York Knicks are the 2026 NBA champions. (nba.com)
 
 ### Explanation
 
-Use `-e` to get an explanation of any command, snippet, or concept:
+Use `-e` to get an explanation of any command, snippet, or concept.
 
 ```bash
 $ q -e 'find . -type d -name .git -exec dirname {} \; | sort'
@@ -106,25 +106,28 @@ This walks the current directory tree, finds every .git directory, strips the tr
 
 ### Text Generation
 
-Use `-t` to generate text without a system prompt:
+Use `-t` to generate text without a system prompt.
 
 ```bash
 $ q -t write a sentence with only words starting with q
 Quick quails quietly quench quivering quagmires.
 ```
 
-### Help Agent
+### Meta Help
 
-Use `-h` to pass a question to the built-in help agent which answers from `q`'s own source code:
+Use `-h` to ask `q` a question about itself. This is a great way to learn about its capabilities.
 
 ```bash
-$ q -h where are api keys stored
-API keys are stored in ~/.q/.env
+$ q -h is -- -k transient or persistent
+-k is transient. It overrides the API key for a single command and is not saved to the .env file.
 ```
+
+> [!IMPORTANT]
+> Each query uses many input tokens because it sends `q`'s source code as context.
 
 <!-- ### Batch Commands
 
-Use `-b` to run a command on each line of a file:
+Use `-b` to run a command on each line of a file.
 
 ```bash
 $ q -sx "install this package: " -b packages.txt
@@ -140,7 +143,7 @@ Invoking `q` without a command reuses the previous one in the session. Use `-n` 
 
 `q` defines four capability **tiers** per provider: `low`, `med`, `high`, and `max`. Each maps to a comparable model and parameters on every provider, with lower tiers faster and cheaper, and higher tiers more capable. Tiers abstract away model and parameter selection, making it easy to switch providers or scale capability up and down.
 
-Each command defines a default tier, and the default provider is set in the [config](#configuration). Use `-m` to override the default model selection by tier, provider, or specific model name:
+Each command defines a default tier (viewable with `q -hv`), and the default provider is set in the [config](#configuration). Use `-m` to override the default model selection by tier, provider, or specific model name.
 
 ```bash
 $ q -c quicksort -m max                         # override tier, use default provider
@@ -160,37 +163,6 @@ Use `-v` to inspect the resolved provider, model, and parameters.
 
 Use `-k` to override the default API key for a single invocation, useful for switching accounts or testing a key without persisting it.
 
-## Flag Reference
-
-| Flag | Name         | Arg     | Description                       | Type    | Tier | WIP |
-| ---- | ------------ | ------- | --------------------------------- | --------| ---- | :--:|
-| `-a` | agent        | ?       | *[reserved for future use]*       | Command | ?    | ✗   |
-| `-b` | batch        | ?       | *[reserved for future use]*       |         | ?    | ✗   |
-| `-c` | code         | str     | generate code                     | Command | high |     |
-| `-d` | directory    | - / str | add directory to context          | Option  | -    | ✗   |
-| `-e` | explain      | - / str | explain code or text              | Command | high |     |
-| `-f` | file         | str     | add file contents to context      | Option  | -    | ✗   |
-| `-g` |              |         |                                   |         |      |     |
-| `-h` | help         | - / str | help message / agent              | Command | low  |     |
-| `-i` | image        | str     | generate/edit an image            | Command | med  |     |
-| `-j` | json         | -       | output in JSON format             | Option  | -    | ✗   |
-| `-k` | api key      | str     | override API key                  | Option  | -    |     |
-| `-l` | code lang    | str     | override code generation language | Option  | -    |     |
-| `-m` | model        | str     | override model/provider           | Option  | -    |     |
-| `-n` | new session  | -       | clear the session history         | Option  | -    |     |
-| `-o` | output path  | str     | write output to a file            | Option  | -    |     |
-| `-p` |              |         |                                   |         |      |     |
-| `-q` |              |         |                                   |         |      |     |
-| `-r` | rag          | - / str | retrieval augmented generation    | Command | ?    | ✗   |
-| `-s` | shell        | - / str | generate a shell command          | Command | med  |     |
-| `-t` | text         | str     | generate text                     | Command | med  |     |
-| `-u` | user command | str     | *[reserved for future use]*       | Command | ?    | ✗   |
-| `-v` | verbose      | -       | debug logging                     | Option  | -    |     |
-| `-w` | web          | str     | search the web                    | Command | low  |     |
-| `-x` | execute      | -       | execute shell command             | Option  | -    |     |
-| `-y` |              |         |                                   |         |      |     |
-| `-z` | undo         | - / int | undo exchanges (default: 1)       | Option  | -    |     |
-
 # Library Usage
 
 The `q` library is built on two principles:
@@ -203,7 +175,7 @@ This leads to a simple, explicit architecture that requires little boilerplate t
 
 A **client** is a wrapper around a provider's API for one capability.
 
-Clients extend `Client[T]` and are instantiated with an API key, model name, and optionally provider- and model-specific argument overrides. All clients expose a `generate` method which invokes the LLM, retries transient failures, and returns a value of type `T`:
+Clients extend `Client[T]` and are instantiated with an API key, model name, and optionally provider- and model-specific argument overrides. All clients expose a `generate` method which invokes the LLM, retries transient failures, and returns a value of type `T`.
 
 ```python
 Client[T](api_key: str, model: str, **model_args)
@@ -220,7 +192,7 @@ The following built-in clients are provided for each provider and capability:
 
 ### Dynamic Loading
 
-Client classes are typically imported from their provider module, but can also be dynamically loaded at runtime by specifying a provider and capability using the `load_client_class` utility:
+Client classes are typically imported from their provider module, but can also be dynamically loaded at runtime by specifying a provider and capability using the `load_client_class` utility.
 
 ```python
 from q.providers import load_client_class
