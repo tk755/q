@@ -123,7 +123,7 @@ $ q -h is -- -k transient or persistent
 ```
 
 > [!IMPORTANT]
-> Each query uses many input tokens because it sends `q`'s source code as context.
+> Each query consumes a large number of input tokens because it sends `q`'s source code as context.
 
 <!-- ### Batch Commands
 

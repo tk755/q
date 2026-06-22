@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import os
 import platform
+import re
 import string
 import subprocess
 import sys
@@ -13,15 +14,17 @@ from pathlib import Path
 
 import distro
 import pyperclip
+from flatten_dict import flatten
 from termcolor import colored
 
 from q import __version__
 from q.providers import load_client_class
 
 from ..agents import ChatAgent
+from ..message import Role
 from .models import Tier, resolve_model_arg
 from .session import StateManager
-from .terminal import InputError, format_response, qprint
+from .terminal import InputError, qprint
 
 # region Registry
 
@@ -103,56 +106,87 @@ class LLMCommand(Command):
         api_key = self.args.get("k") or StateManager.load_api_key(provider)
         client = client_class(api_key, model, **model_args)
 
-        if "v" in self.args:
-            qprint("MODEL PARAMETERS:", color="light_blue", file=sys.stderr)
-            qprint("model: ", color="green", file=sys.stderr, end="")
-            qprint(f"{client.model} ({provider})", file=sys.stderr)
-            if client.model_args:
-                for k, v in client.model_args.items():
-                    qprint(f"{k}: ", color="green", file=sys.stderr, end="")
-                    qprint(f"{v}", file=sys.stderr)
-
         # create agent
         messages = [] if "n" in self.args else StateManager.load_messages()
         agent = ChatAgent(client, self.system, messages)
         if "z" in self.args:
             agent.drop_exchanges(self.args["z"])
 
-        # prompt agent
+        # verbose output
+        if "v" in self.args:
+            qprint("MODEL PARAMETERS:", color="light_blue", file=sys.stderr)
+            qprint("model: ", color="green", file=sys.stderr, end="")
+            qprint(f"{provider}:{client.model}", file=sys.stderr)
+            if client.model_args:
+                for k, v in flatten(client.model_args, reducer="dot").items():
+                    qprint(f"{k}: ", color="green", file=sys.stderr, end="")
+                    qprint(f"{v}", file=sys.stderr)
+            if agent.system:
+                qprint("\nSYSTEM:", color="light_blue", file=sys.stderr)
+                qprint(agent.system, file=sys.stderr)
+            qprint("\nMESSAGES:", color="light_blue", file=sys.stderr)
+            for msg in agent.messages:
+                qprint(f"{msg.role.value}: ", color="green", file=sys.stderr, end="")
+                qprint(msg.content, file=sys.stderr)
+            qprint(f"{Role.USER.value}: ", color="green", file=sys.stderr, end="")
+            qprint(self.args[self.char], file=sys.stderr)
+            qprint("\nRESPONSE:", color="light_blue", file=sys.stderr)
+
+        # send prompt and receive response
         response = await agent.prompt(self.args[self.char])
+        self.process_response(response)
 
         # save session
         StateManager.save_session(self.char, agent.messages)
 
-        if "v" in self.args:
-            qprint("\nMESSAGES:", color="light_blue", file=sys.stderr)
-            if agent.system:
-                qprint("system: ", color="green", file=sys.stderr, end="")
-                qprint(agent.system, file=sys.stderr)
-            for msg in agent.messages:
-                qprint(f"{msg.role.value}: ", color="green", file=sys.stderr, end="")
-                qprint(msg.content, file=sys.stderr)
-
-        # process response
-        self.process_response(response)
-
     def process_response(self, response: str) -> None:
         """Format response and route output."""
-        if "j" not in self.args:
-            response = format_response(response)
-
+        formatted_response = self._format_text_response(response)
         if "o" in self.args:
-            Path(self.args["o"]).write_text(response)
+            Path(self.args["o"]).write_text(formatted_response)
             qprint(f"Response saved to {self.args['o']}", color="yellow", file=sys.stderr)
         else:
-            if "v" not in self.args:
-                qprint(response)
+            self._print_text_response(formatted_response)
 
             # copy output to clipboard
             if self.clip:
                 with contextlib.suppress(pyperclip.PyperclipException):
-                    pyperclip.copy(response)
+                    pyperclip.copy(formatted_response)
                     qprint("Copied to clipboard.", color="yellow", file=sys.stderr)
+
+    @staticmethod
+    def _format_text_response(text: str) -> str:
+        """Normalize the formatting of an LLM text response."""
+        # shorten links from web search responses
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text).strip()
+
+        # convert two-plus newlines into only two
+        text = re.sub(r"\n{2,}", "\n\n", text)
+
+        # remove formatting from response-level code blocks
+        text = re.sub(r"^```.*?\n(.*)\n```$", r"\1", text, flags=re.DOTALL)
+
+        return text
+
+    @staticmethod
+    def _print_text_response(text: str, code_color: str = "cyan", emphasis_color: str = "magenta") -> None:
+        """Print an LLM text response to stdout, replacing formatting symbols with colors."""
+        if sys.stdout.isatty():
+            # convert code blocks into colored text
+            text = re.sub(
+                r"```(?:\w+\n?)?(.*?)```", lambda m: colored(m.group(1).strip(), code_color), text, flags=re.DOTALL
+            )
+
+            # convert inline-code into colored text
+            text = re.sub(r"`([^`]+)`", lambda m: colored(m.group(1), code_color), text)
+
+            # convert bold text into colored text
+            text = re.sub(r"\*\*([^*]+)\*\*", lambda m: colored(m.group(1), emphasis_color), text)
+
+            # convert italic text into colored text
+            text = re.sub(r"\*([^*]+)\*", lambda m: colored(m.group(1), emphasis_color), text)
+
+        qprint(text)
 
 
 # region Commands
@@ -423,10 +457,10 @@ class UndoOption(Flag):
     default = 1
 
 
-# region Future Flags
+# region Reserved Flags
+
 
 """
-# TODO: p2
 class AgentCommand(Command):
     char = "a"
     desc = "delegate to agent"
@@ -435,7 +469,6 @@ class AgentCommand(Command):
     tier = Tier.HIGH
 
 
-# TODO: p1
 class BatchOption(Flag):
     char = "b"
     desc = "batch process inputs"
@@ -443,28 +476,31 @@ class BatchOption(Flag):
     required = True
 
 
-# TODO: p0
 class DirectoryOption(Flag):
     char = "d"
-    desc = "add directory to context"
+    desc = "add directory layout"
     value_type = ValueType.STR
 
 
-# TODO: p0
 class FileOption(Flag):
     char = "f"
-    desc = "add file to context"
+    desc = "add file content"
     value_type = ValueType.STR
     required = True
 
 
-# TODO: p1
 class JsonOption(Flag):
     char = "j"
     desc = "output in JSON"
 
 
-# TODO: p2
+class ParametersOption(Flag):
+    char = "p"
+    desc = "override model parameters"
+    value_type = ValueType.TEXT
+    required = True
+
+
 class RetrievalCommand(Command):
     char = "r"
     desc = "retrieval-augmented generation"
@@ -473,7 +509,6 @@ class RetrievalCommand(Command):
     tier = Tier.MED
 
 
-# TODO: p2
 class UserCommand(Command):
     char = "u"
     desc = "user command"

@@ -11,6 +11,7 @@ dependencies = [
     "anthropic==0.111.0",
     "colorama==0.4.6",
     "distro==1.9.0",
+    "flatten-dict==0.5.0",
     "openai==2.43.0",
     "psutil==7.2.2",
     "pydantic==2.13.4",
