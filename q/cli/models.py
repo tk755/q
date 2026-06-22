@@ -65,15 +65,15 @@ def _lookup(provider: str, tier: Tier) -> tuple[str, str, dict]:
     return provider, model, model_args
 
 
-def resolve_model_arg(arg: str | None, default_tier: Tier, default_provider: str) -> tuple[str, str, dict]:
+def resolve_model_flag(value: str | None, default_tier: Tier, default_provider: str) -> tuple[str, str, dict]:
     """Return (provider, model_name, model_args)."""
-    if arg is None:
+    if value is None:
         return _lookup(default_provider, default_tier)
-    arg = arg.lower()
+    value = value.lower()
 
-    # provider:value
-    if ":" in arg:
-        provider, value = arg.split(":", 1)
+    # provider:tier/model
+    if ":" in value:
+        provider, value = value.split(":", 1)
         with contextlib.suppress(ValueError):
             # provider:tier (e.g. "openai:high")
             return _lookup(provider, Tier(value))
@@ -82,10 +82,10 @@ def resolve_model_arg(arg: str | None, default_tier: Tier, default_provider: str
 
     # tier (e.g. "high")
     with contextlib.suppress(ValueError):
-        return _lookup(default_provider, Tier(arg))
+        return _lookup(default_provider, Tier(value))
 
     # provider (e.g. "openai")
-    if arg in MODELS:
-        return _lookup(arg, default_tier)
+    if value in MODELS:
+        return _lookup(value, default_tier)
 
-    raise InputError(f"invalid model: {arg}")
+    raise InputError(f"invalid model: {value}")

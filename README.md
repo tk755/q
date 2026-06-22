@@ -192,7 +192,7 @@ The following built-in clients are provided for each provider and capability:
 
 ### Dynamic Loading
 
-Client classes are typically imported from their provider module, but can also be dynamically loaded at runtime by specifying a provider and capability using the `load_client_class` utility.
+Client classes are typically imported from their provider module, but can also be dynamically loaded at runtime by specifying a provider and client name using the `load_client_class` utility.
 
 ```python
 from q.providers import load_client_class

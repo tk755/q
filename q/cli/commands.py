@@ -22,7 +22,7 @@ from q.providers import load_client_class
 
 from ..agents import ChatAgent
 from ..message import Role
-from .models import Tier, resolve_model_arg
+from .models import Tier, resolve_model_flag
 from .session import StateManager
 from .terminal import InputError, qprint
 
@@ -42,8 +42,7 @@ def get_default_command() -> type[Command]:
 
 # region Types
 
-type Value = str | int | None
-type ArgMap = dict[str, Value]
+type FlagValue = str | int | None
 
 
 class ValueType(Enum):
@@ -63,10 +62,10 @@ class Flag(ABC):
     desc: str
     value_type: ValueType = ValueType.NONE
     required: bool = False
-    default: Value = None
+    default: FlagValue = None
 
     def __init_subclass__(cls, **kwargs):
-        """Auto-register subclass to FLAG_MAP if it defines a char."""
+        """Auto-register concrete subclass to FLAG_MAP."""
         super().__init_subclass__(**kwargs)
         if hasattr(cls, "char"):
             FLAG_MAP[cls.char] = cls
@@ -75,11 +74,12 @@ class Flag(ABC):
 class Command(Flag):
     """Base class for CLI commands."""
 
-    def __init__(self, args: ArgMap):
-        self.args = args
+    def __init__(self, value: FlagValue, opts: dict[type[Flag], FlagValue]):
+        self.value = value
+        self.opts = opts
 
     def __init_subclass__(cls, **kwargs):
-        """Auto-register subclass to COMMAND_MAP if it defines a char."""
+        """Auto-register concrete subclass to COMMAND_MAP."""
         super().__init_subclass__(**kwargs)
         if hasattr(cls, "char"):
             COMMAND_MAP[cls.char] = cls
@@ -92,28 +92,28 @@ class LLMCommand(Command):
     """Base class for commands that prompt an LLM."""
 
     tier: Tier
-    client_str: str = "TextClient"
+    client_name: str = "TextClient"
     system: str | None = None
     clip: bool = False
 
     async def execute(self) -> None:
         # resolve provider, model, and model args
         default_provider = StateManager.default_provider()
-        provider, model, model_args = resolve_model_arg(self.args.get("m"), self.tier, default_provider)
+        provider, model, model_args = resolve_model_flag(self.opts.get(ModelOption), self.tier, default_provider)
 
         # create client dynamically
-        client_class = load_client_class(provider, self.client_str)
-        api_key = self.args.get("k") or StateManager.load_api_key(provider)
+        client_class = load_client_class(provider, self.client_name)
+        api_key = self.opts.get(KeyOption) or StateManager.load_api_key(provider)
         client = client_class(api_key, model, **model_args)
 
         # create agent
-        messages = [] if "n" in self.args else StateManager.load_messages()
+        messages = [] if NewOption in self.opts else StateManager.load_messages()
         agent = ChatAgent(client, self.system, messages)
-        if "z" in self.args:
-            agent.drop_exchanges(self.args["z"])
+        if UndoOption in self.opts:
+            agent.drop_exchanges(self.opts[UndoOption])
 
         # verbose output
-        if "v" in self.args:
+        if VerboseOption in self.opts:
             qprint("MODEL PARAMETERS:", color="light_blue", file=sys.stderr)
             qprint("model: ", color="green", file=sys.stderr, end="")
             qprint(f"{provider}:{client.model}", file=sys.stderr)
@@ -125,15 +125,15 @@ class LLMCommand(Command):
                 qprint("\nSYSTEM:", color="light_blue", file=sys.stderr)
                 qprint(agent.system, file=sys.stderr)
             qprint("\nMESSAGES:", color="light_blue", file=sys.stderr)
-            for msg in agent.messages:
-                qprint(f"{msg.role.value}: ", color="green", file=sys.stderr, end="")
-                qprint(msg.content, file=sys.stderr)
+            for message in agent.messages:
+                qprint(f"{message.role.value}: ", color="green", file=sys.stderr, end="")
+                qprint(message.content, file=sys.stderr)
             qprint(f"{Role.USER.value}: ", color="green", file=sys.stderr, end="")
-            qprint(self.args[self.char], file=sys.stderr)
+            qprint(self.value, file=sys.stderr)
             qprint("\nRESPONSE:", color="light_blue", file=sys.stderr)
 
         # send prompt and receive response
-        response = await agent.prompt(self.args[self.char])
+        response = await agent.prompt(self.value)
         self.process_response(response)
 
         # save session
@@ -142,9 +142,10 @@ class LLMCommand(Command):
     def process_response(self, response: str) -> None:
         """Format response and route output."""
         formatted_response = self._format_text_response(response)
-        if "o" in self.args:
-            Path(self.args["o"]).write_text(formatted_response)
-            qprint(f"Response saved to {self.args['o']}", color="yellow", file=sys.stderr)
+        if OutputOption in self.opts:
+            path = self.opts[OutputOption]
+            Path(path).write_text(formatted_response)
+            qprint(f"Response saved to {path}", color="yellow", file=sys.stderr)
         else:
             self._print_text_response(formatted_response)
 
@@ -220,7 +221,7 @@ class CodeCommand(LLMCommand):
 
     @property
     def system(self) -> str:
-        code_lang = self.args.get("l") or StateManager.default_code_lang()
+        code_lang = self.opts.get(LanguageOption) or StateManager.default_code_lang()
         return f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Use the {code_lang} programming language."
 
 
@@ -250,8 +251,8 @@ class ShellCommand(LLMCommand):
         return sys_name
 
     async def execute(self) -> None:
-        # rerun and fix last command (requires shell integration)
-        if self.args[self.char] is None:
+        # rerun and fix last shell command (requires shell integration)
+        if self.value is None:
             cmd = os.environ.get("Q_CMD", None)
             exit_code = os.environ.get("Q_EXIT", None)
             if cmd is None or exit_code is None:
@@ -276,13 +277,13 @@ class ShellCommand(LLMCommand):
                 # kill long-running command
                 proc.kill()
                 text = f"The command `{cmd}` failed with exit code {exit_code}. Fix it."
-            self.args[self.char] = text
+            self.value = text
 
         await super().execute()
 
     def process_response(self, response: str) -> None:
         # execute command
-        if "x" in self.args:
+        if ExecuteOption in self.opts:
             qprint(f"> {response}", color="green", file=sys.stderr)
             subprocess.run(response, shell=True)
         else:
@@ -295,7 +296,7 @@ class WebCommand(LLMCommand):
     value_type = ValueType.TEXT
     required = True
     tier = Tier.LOW
-    client_str = "WebClient"
+    client_name = "WebClient"
     system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context or background. The response should be less than a single sentence. Always search the internet."
 
 
@@ -305,12 +306,12 @@ class ImageCommand(LLMCommand):
     value_type = ValueType.TEXT
     required = True
     tier = Tier.MED
-    client_str = "ImageClient"
+    client_name = "ImageClient"
     system = "Generate an image of the following description."
 
     def process_response(self, response: bytes) -> None:
-        text = self.args[self.char].translate(str.maketrans("", "", string.punctuation)).replace(" ", "_")
-        path = self.args.get("o") or f"q_{text}"
+        text = self.value.translate(str.maketrans("", "", string.punctuation)).replace(" ", "_")
+        path = self.opts.get(OutputOption) or f"q_{text}"
         path = path if path.lower().endswith(".png") else f"{path}.png"
         Path(path).write_bytes(response)
         qprint(f"Image saved to {path}", color="yellow", file=sys.stderr)
@@ -333,7 +334,7 @@ class HelpCommand(LLMCommand):
         tier_col_len = max(len(flag.tier.value) for flag in FLAG_MAP.values() if hasattr(flag, "tier"))
 
         command_rows, option_rows = [], []
-        for flag in sorted(FLAG_MAP.values(), key=lambda f: f.char):
+        for flag in sorted(FLAG_MAP.values(), key=lambda flag: flag.char):
             char = colored(f"-{flag.char}", accent_color)
 
             accent_word = flag.__name__.removesuffix("Command").removesuffix("Option").lower()
@@ -375,7 +376,7 @@ class HelpCommand(LLMCommand):
         ]
 
         if verbose:
-            unused_flags = {f"-{c}" for c in string.ascii_lowercase if c not in FLAG_MAP}
+            unused_flags = {f"-{char}" for char in string.ascii_lowercase if char not in FLAG_MAP}
             lines += [
                 "",
                 colored("Unused:", attrs=["bold"]),
@@ -398,8 +399,8 @@ class HelpCommand(LLMCommand):
         )
 
     async def execute(self) -> None:
-        if not self.args.get(self.char):
-            qprint(self.help_text("v" in self.args))
+        if not self.value:
+            qprint(self.help_text(VerboseOption in self.opts))
         else:
             await super().execute()
 
