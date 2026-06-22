@@ -112,6 +112,9 @@ class LLMCommand(Command):
         if UndoOption in self.opts:
             agent.drop_exchanges(self.opts[UndoOption])
 
+        # build prompt
+        prompt = await self.build_prompt()
+
         # verbose output
         if VerboseOption in self.opts:
             qprint("MODEL PARAMETERS:", color="light_blue", file=sys.stderr)
@@ -129,15 +132,24 @@ class LLMCommand(Command):
                 qprint(f"{message.role.value}: ", color="green", file=sys.stderr, end="")
                 qprint(message.content, file=sys.stderr)
             qprint(f"{Role.USER.value}: ", color="green", file=sys.stderr, end="")
-            qprint(self.value, file=sys.stderr)
+            qprint(prompt, file=sys.stderr)
             qprint("\nRESPONSE:", color="light_blue", file=sys.stderr)
 
         # send prompt and receive response
-        response = await agent.prompt(self.value)
+        response = await agent.prompt(prompt)
         self.process_response(response)
 
         # save session
         StateManager.save_session(self.char, agent.messages)
+
+    async def build_prompt(self) -> str:
+        """Build the user prompt string."""
+        components = []
+        if FileOption in self.opts:
+            components.append(FileOption.get_content(self.opts[FileOption]))
+        if self.value:
+            components.append(self.value)
+        return "\n\n".join(components)
 
     def process_response(self, response: str) -> None:
         """Format response and route output."""
@@ -250,39 +262,45 @@ class ShellCommand(LLMCommand):
             return f"{shell} on {sys_name}"
         return sys_name
 
-    async def execute(self) -> None:
-        # rerun and fix last shell command (requires shell integration)
-        if self.value is None:
-            cmd = os.environ.get("Q_CMD", None)
-            exit_code = os.environ.get("Q_EXIT", None)
-            if cmd is None or exit_code is None:
-                raise InputError(
-                    "q -s without a prompt requires shell integration. Add to ~/.bashrc:\n"
-                    '    q() { Q_EXIT=$? Q_CMD=$(fc -ln -1) command q "$@"; }'
-                )
-            cmd, exit_code = cmd.strip(), exit_code.strip()
+    async def build_prompt(self) -> str:
+        """Build prompt to fix last shell command if no prompt is provided."""
+        if self.value:
+            return await super().build_prompt()
 
-            try:
-                # run command and capture output
-                proc = await asyncio.create_subprocess_shell(
-                    cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-                )
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
-                text = f"The command `{cmd}` failed with exit code {proc.returncode}. Fix it."
-                if stderr:
-                    text += f"\nSTDERR:\n{stderr.decode().strip()}"
-                if stdout:
-                    text += f"\nSTDOUT:\n{stdout.decode().strip()}"
-            except TimeoutError:
-                # kill long-running command
-                proc.kill()
-                text = f"The command `{cmd}` failed with exit code {exit_code}. Fix it."
-            self.value = text
+        # get last shell command
+        cmd = os.environ.get("Q_CMD", None)
+        exit_code = os.environ.get("Q_EXIT", None)
+        if cmd is None or exit_code is None:
+            raise InputError(
+                f"-{self.char} requires shell integration to fix last command.\n\n"
+                "Add this line to ~/.bashrc:\n"
+                '  q() { Q_EXIT=$? Q_CMD=$(fc -ln -1) command q "$@"; }'
+            )
+        if exit_code == "0":
+            raise InputError(f"-{self.char} has nothing to fix; last command succeeded")
 
-        await super().execute()
+        # run shell command and capture output
+        cmd = cmd.strip()
+        stderr = stdout = b""
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+            exit_code = proc.returncode
+        except TimeoutError:
+            proc.kill()
+
+        # prompt to fix last shell command
+        text = f"The command `{cmd}` failed with exit code {exit_code}. Fix it."
+        if stderr:
+            text += f"\nSTDERR:\n{stderr.decode().strip()}"
+        if stdout:
+            text += f"\nSTDOUT:\n{stdout.decode().strip()}"
+        return text
 
     def process_response(self, response: str) -> None:
-        # execute command
+        """Execute shell command if applicable."""
         if ExecuteOption in self.opts:
             qprint(f"> {response}", color="green", file=sys.stderr)
             subprocess.run(response, shell=True)
@@ -310,6 +328,7 @@ class ImageCommand(LLMCommand):
     system = "Generate an image of the following description."
 
     def process_response(self, response: bytes) -> None:
+        """Save image to disk."""
         text = self.value.translate(str.maketrans("", "", string.punctuation)).replace(" ", "_")
         path = self.opts.get(OutputOption) or f"q_{text}"
         path = path if path.lower().endswith(".png") else f"{path}.png"
@@ -399,13 +418,34 @@ class HelpCommand(LLMCommand):
         )
 
     async def execute(self) -> None:
-        if not self.value:
-            qprint(self.help_text(VerboseOption in self.opts))
-        else:
+        if self.value:
             await super().execute()
+        else:
+            qprint(self.help_text(VerboseOption in self.opts))
 
 
 # region Options
+
+
+class FileOption(Flag):
+    char = "f"
+    desc = "add file content"
+    value_type = ValueType.STR
+    required = True
+
+    @classmethod
+    def get_content(cls, path: str) -> str:
+        """Read a file and wrap its contents as a context block."""
+        try:
+            text = Path(path).expanduser().read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise InputError(f"cannot read '{path}': not valid UTF-8 text") from None
+        except OSError as e:
+            raise InputError(f"cannot read '{path}': {e.strerror.lower()}") from None
+
+        # wrap file content and escape closing tags within content
+        text = text.replace("</file>", "&lt;/file&gt;").rstrip("\n")
+        return f'<file path="{path}">\n{text}\n</file>'
 
 
 class KeyOption(Flag):
@@ -482,12 +522,9 @@ class DirectoryOption(Flag):
     desc = "add directory layout"
     value_type = ValueType.STR
 
-
-class FileOption(Flag):
-    char = "f"
-    desc = "add file content"
-    value_type = ValueType.STR
-    required = True
+    @classmethod
+    def get_layout(cls, path: str) -> str:
+        raise NotImplementedError()
 
 
 class JsonOption(Flag):
