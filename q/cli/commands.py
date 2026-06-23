@@ -18,11 +18,10 @@ from flatten_dict import flatten
 from termcolor import colored
 
 from q import __version__
-from q.providers import load_client_class
 
 from ..agents import ChatAgent
 from ..message import Role
-from .models import Tier, resolve_model_flag
+from .models import Tier, resolve_client
 from .session import StateManager
 from .terminal import InputError, qprint
 
@@ -97,12 +96,13 @@ class LLMCommand(Command):
     clip: bool = False
 
     async def execute(self) -> None:
-        # resolve provider, model, and model args
+        # resolve client class and arguments
         default_provider = StateManager.default_provider()
-        provider, model, model_args = resolve_model_flag(self.opts.get(ModelOption), self.tier, default_provider)
+        provider, client_class, model, model_args = resolve_client(
+            self.opts.get(ModelOption), self.tier, default_provider, self.client_name
+        )
 
-        # create client dynamically
-        client_class = load_client_class(provider, self.client_name)
+        # create client
         api_key = self.opts.get(KeyOption) or StateManager.load_api_key(provider)
         client = client_class(api_key, model, **model_args)
 

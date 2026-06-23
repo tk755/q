@@ -141,14 +141,14 @@ Invoking `q` without a command reuses the previous one in the session. Use `-n` 
 
 ## Model Selection
 
-`q` defines four capability **tiers** per provider: `low`, `med`, `high`, and `max`. Each maps to a comparable model and parameters on every provider, with lower tiers faster and cheaper, and higher tiers more capable. Tiers abstract away model and parameter selection, making it easy to switch providers or scale capability up and down.
+`q` defines three capability **tiers** per provider: `low`, `med`, and `high`. Each maps to a comparable model and parameters on every provider, with lower tiers faster and cheaper, and higher tiers more capable. Tiers abstract away model and parameter selection, making it easy to switch providers or scale capability up and down.
 
 Each command defines a default tier (viewable with `q -hv`), and the default provider is set in the [config](#configuration). Use `-m` to override the default model selection by tier, provider, or specific model name.
 
 ```bash
-$ q -c quicksort -m max                         # override tier, use default provider
+$ q -c quicksort -m high                        # override tier, use default provider
 $ q -c quicksort -m anthropic                   # override provider, use default tier
-$ q -c quicksort -m anthropic:max               # override both provider and tier
+$ q -c quicksort -m anthropic:high              # override both provider and tier
 $ q -c quicksort -m anthropic:claude-opus-4-8   # override provider and specify model
 ```
 
