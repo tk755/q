@@ -41,14 +41,15 @@ def get_default_command() -> type[Command]:
 
 # region Types
 
-type FlagValue = str | int | None
+type FlagValue = None | int | str | list[str]
 
 
 class ValueType(Enum):
     NONE = None
-    TEXT = "text"
+    INT = "n"
     STR = "str"
-    INT = "N"
+    STR_LIST = "str+"
+    TEXT = "text"
 
 
 # region Base Classes
@@ -118,20 +119,22 @@ class LLMCommand(Command):
         # verbose output
         if VerboseOption in self.opts:
             qprint("MODEL PARAMETERS:", color="light_blue", file=sys.stderr)
-            qprint("model: ", color="green", file=sys.stderr, end="")
+            qprint("model:", color="green", file=sys.stderr, end=" ")
             qprint(f"{provider}:{client.model}", file=sys.stderr)
             if client.model_args:
                 for k, v in flatten(client.model_args, reducer="dot").items():
-                    qprint(f"{k}: ", color="green", file=sys.stderr, end="")
+                    qprint(f"{k}:", color="green", file=sys.stderr, end=" ")
                     qprint(f"{v}", file=sys.stderr)
             if agent.system:
                 qprint("\nSYSTEM:", color="light_blue", file=sys.stderr)
                 qprint(agent.system, file=sys.stderr)
             qprint("\nMESSAGES:", color="light_blue", file=sys.stderr)
             for message in agent.messages:
-                qprint(f"{message.role.value}: ", color="green", file=sys.stderr, end="")
+                end = "\n" if "\n" in message.content else " "
+                qprint(f"{message.role.value}:", color="green", file=sys.stderr, end=end)
                 qprint(message.content, file=sys.stderr)
-            qprint(f"{Role.USER.value}: ", color="green", file=sys.stderr, end="")
+            end = "\n" if "\n" in prompt else " "
+            qprint(f"{Role.USER.value}:", color="green", file=sys.stderr, end=end)
             qprint(prompt, file=sys.stderr)
             qprint("\nRESPONSE:", color="light_blue", file=sys.stderr)
 
@@ -430,22 +433,24 @@ class HelpCommand(LLMCommand):
 class FileOption(Flag):
     char = "f"
     desc = "add file content"
-    value_type = ValueType.STR
+    value_type = ValueType.STR_LIST
     required = True
 
     @classmethod
-    def get_content(cls, path: str) -> str:
-        """Read a file and wrap its contents as a context block."""
-        try:
-            text = Path(path).expanduser().read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            raise InputError(f"cannot read '{path}': not valid UTF-8 text") from None
-        except OSError as e:
-            raise InputError(f"cannot read '{path}': {e.strerror.lower()}") from None
+    def get_content(cls, paths: list[str]) -> str:
+        """Read a list of files and wrap their contents in <file> tags."""
 
-        # wrap file content and escape closing tags within content
-        text = text.replace("</file>", "&lt;/file&gt;").rstrip("\n")
-        return f'<file path="{path}">\n{text}\n</file>'
+        contents = []
+        for path in paths:
+            try:
+                text = Path(path).expanduser().read_text(encoding="utf-8")
+                contents.append(f'<file path="{path}">\n{text.rstrip("\n")}\n</file>')
+            except UnicodeDecodeError:
+                raise InputError(f"cannot read '{path}': not valid UTF-8 text") from None
+            except OSError as e:
+                raise InputError(f"cannot read '{path}': {e.strerror.lower()}") from None
+
+        return "\n\n".join(contents)
 
 
 class KeyOption(Flag):

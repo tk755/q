@@ -44,10 +44,12 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
                 + ", ".join(f"'{token}'" for token in pending_tokens)
             )
 
-        # extract value based on type
+        # resolve value
         if consumer.value_type == ValueType.TEXT:
             value = " ".join(pending_tokens)
-        else:  # STR or INT
+        elif consumer.value_type == ValueType.STR_LIST:
+            value = pending_tokens
+        else:
             if len(pending_tokens) > 1:
                 raise InputError(
                     f"-{consumer.char} expects one token but got: " + ", ".join(f"'{token}'" for token in pending_tokens)

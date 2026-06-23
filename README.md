@@ -70,13 +70,6 @@ $ q -c binary search -l rust -o search.rs
 Response saved to search.rs
 ```
 
-Use `-f` to provide an input file as context.
-
-```bash
-$ q -c add docstrings to all functions -f lib.py -o lib_doc.py
-Response saved to lib_doc.py
-```
-
 ### Image <!--Editing and -->Generation
 
 Use `-i` to generate an image.
