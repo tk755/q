@@ -1,34 +1,25 @@
 import re
+from typing import Any
 
-from .commands import FLAG_MAP, Command, Flag, FlagValue, HelpCommand, ValueType, get_default_command
+from .commands import FLAG_MAP, Command, Flag, HelpCommand, ValueType, get_default_command
 from .terminal import InputError
 
 
-def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str]) -> dict[type[Flag], FlagValue]:
+def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str]) -> dict[type[Flag], Any]:
     """
-    Bind tokens to one flag and default values to all others.
-
-    Disambiguation rules:
-    1. Flags with required values take priority over optional ones.
-    2. Flags which bind to int values are excluded if value is not int.
-    3. If zero or multiple candidates remain, raise UserError.
+    Bind tokens to a single flag and default values to all others.
+    Flags with required values take priority over optional ones.
     """
-    none_flags = [flag for flag in pending_flags if flag.value_type == ValueType.NONE]
-    value_flags = [flag for flag in pending_flags if flag.value_type != ValueType.NONE]
 
-    consumer: type[Flag] | None = None
-    value: FlagValue = None
+    bindings: dict[type[Flag], Any] = { flag: flag.default for flag in pending_flags }
 
-    # determine which flag binds to pending tokens
+    required_flags = [flag for flag in pending_flags if flag.required]
+    optional_flags = [flag for flag in pending_flags if not flag.required and flag.value_type != ValueType.NONE]
+
+    # bind tokens to a single flag if possible
     if pending_tokens:
-        required_flags = [flag for flag in value_flags if flag.required]
-        optional_flags = [flag for flag in value_flags if not flag.required]
-
-        # exclude INT flags for non-integer values
-        if len(pending_tokens) > 1 or not pending_tokens[0].lstrip("-").isdigit():
-            optional_flags = [flag for flag in optional_flags if flag.value_type != ValueType.INT]
-
         # resolve consumer
+        consumer: type[Flag] | None = None
         if len(required_flags) == 1:
             consumer = required_flags[0]
         elif len(required_flags) > 1:
@@ -40,44 +31,42 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
         else:
             raise InputError(
                 ", ".join(f"-{flag.char}" for flag in pending_flags)
-                + f" received invalid argument{('s' if len(pending_tokens) > 1 else '')}: "
+                + f" do{('es' if len(pending_flags) == 1 else '')} not expect a value but got: "
                 + ", ".join(f"'{token}'" for token in pending_tokens)
             )
 
-        # resolve value
+        # resolve tokens
         if consumer.value_type == ValueType.TEXT:
-            value = " ".join(pending_tokens)
+            bindings.update({consumer: " ".join(pending_tokens)})
         elif consumer.value_type == ValueType.STR_LIST:
-            value = pending_tokens
+            bindings.update({consumer: pending_tokens})
+        elif len(pending_tokens) > 1:
+            raise InputError(
+                f"-{consumer.char} expects one value but got: "
+                + ", ".join(f"'{token}'" for token in pending_tokens)
+            )
         else:
-            if len(pending_tokens) > 1:
-                raise InputError(
-                    f"-{consumer.char} expects one token but got: " + ", ".join(f"'{token}'" for token in pending_tokens)
-                )
-            value = pending_tokens[0]
-            if consumer.value_type == ValueType.INT:
+            token = pending_tokens[0]
+            if consumer.value_type == ValueType.STR:
+                bindings.update({consumer: token})
+            elif consumer.value_type == ValueType.INT:
                 try:
-                    value = int(value)
+                    bindings.update({consumer: int(token)})
                 except ValueError:
-                    raise InputError(f"-{consumer.char} expects an integer but got: '{pending_tokens[0]}'") from None
+                    raise InputError(f"-{consumer.char} expects an integer but got: '{token}'") from None
 
-    # bind values to flags
-    bindings: dict[type[Flag], FlagValue] = {}
-    for flag in none_flags:
-        bindings[flag] = None
-    for flag in value_flags:
-        if flag == consumer:
-            bindings[flag] = value
-        elif flag.required:
-            raise InputError(f"-{flag.char} requires a value")
-        else:
-            bindings[flag] = flag.default
+    elif required_flags:
+        raise InputError(
+            ", ".join(f"-{flag.char}" for flag in required_flags)
+            + f" require{'s' if len(required_flags) == 1 else ''} a value"
+        )
+
     return bindings
 
 
 def parse(argv: list[str]) -> Command:
     """Parse command-line arguments into an executable command."""
-    bindings: dict[type[Flag], FlagValue] = {}
+    bindings: dict[type[Flag], Any] = {}
     pending_flags: list[type[Flag]] = []
     pending_tokens: list[str] = []
     flag_parsing_enabled = True
