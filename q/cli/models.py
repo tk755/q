@@ -1,8 +1,4 @@
-import contextlib
 from enum import Enum
-
-from q.client import Client
-from q.providers import load_client_class
 
 from .terminal import InputError
 
@@ -76,7 +72,8 @@ MODEL_CONFIGS['google']['ImageClient'] = {
 }
 
 
-def _lookup(provider: str, client_name: str, tier: Tier) -> tuple[str, str, dict]:
+def lookup(provider: str, client_name: str, tier: Tier) -> tuple[str, dict]:
+    """Return (model_name, model_args) for a given provider, client, and tier."""
     if provider not in MODEL_CONFIGS:
         raise InputError(f"unknown provider: {provider}")
     if client_name not in MODEL_CONFIGS[provider]:
@@ -85,37 +82,4 @@ def _lookup(provider: str, client_name: str, tier: Tier) -> tuple[str, str, dict
     config = MODEL_CONFIGS[provider][client_name][tier]
     model = config["model"]
     model_args = {k: v for k, v in config.items() if k != "model"}
-    return provider, model, model_args
-
-
-def _resolve_model_config(value: str | None, tier: Tier, default_provider: str, client_name: str) -> tuple[str, str, dict]:
-    """Resolve a model flag value to (provider, model_name, model_args)."""
-    if value is None:
-        return _lookup(default_provider, client_name, tier)
-    value = value.lower()
-
-    # provider:tier or provider:model
-    if ":" in value:
-        provider, rest = value.split(":", 1)
-        with contextlib.suppress(ValueError):
-            # provider:tier (e.g. "openai:high")
-            return _lookup(provider, client_name, Tier(rest))
-        # provider:model (e.g. "openai:gpt-4.1-nano")
-        return provider, rest, {}
-
-    # tier (e.g. "high")
-    with contextlib.suppress(ValueError):
-        return _lookup(default_provider, client_name, Tier(value))
-
-    # provider (e.g. "openai")
-    if value in MODEL_CONFIGS:
-        return _lookup(value, client_name, tier)
-
-    raise InputError(f"invalid model: {value}")
-
-
-def resolve_client(value: str | None, tier: Tier, default_provider: str, client_name: str) -> tuple[str, type[Client], str, dict]:
-    """Resolve a model flag to (provider, client_class, model_name, model_args)."""
-    provider, model, model_args = _resolve_model_config(value, tier, default_provider, client_name)
-    client_class = load_client_class(provider, client_name)
-    return provider, client_class, model, model_args
+    return model, model_args

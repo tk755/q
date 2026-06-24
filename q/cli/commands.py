@@ -11,6 +11,7 @@ import sys
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import distro
 import pyperclip
@@ -18,10 +19,12 @@ from flatten_dict import flatten
 from termcolor import colored
 
 from q import __version__
+from q.agents import ChatAgent
+from q.client import Client
+from q.message import Role
+from q.providers import load_client_class
 
-from ..agents import ChatAgent
-from ..message import Role
-from .models import Tier, resolve_client
+from .models import MODEL_CONFIGS, Tier, lookup
 from .session import StateManager
 from .terminal import InputError, qprint
 
@@ -40,8 +43,6 @@ def get_default_command() -> type[Command]:
 
 
 # region Types
-
-type FlagValue = None | int | str | list[str]
 
 
 class ValueType(Enum):
@@ -62,7 +63,7 @@ class Flag(ABC):
     desc: str
     value_type: ValueType = ValueType.NONE
     required: bool = False
-    default: FlagValue = None
+    default: Any = None
 
     def __init_subclass__(cls, **kwargs):
         """Auto-register concrete subclass to FLAG_MAP."""
@@ -74,7 +75,7 @@ class Flag(ABC):
 class Command(Flag):
     """Base class for CLI commands."""
 
-    def __init__(self, value: FlagValue, opts: dict[type[Flag], FlagValue]):
+    def __init__(self, value: str | None, opts: dict[type[Flag], Any]):
         self.value = value
         self.opts = opts
 
@@ -97,15 +98,16 @@ class LLMCommand(Command):
     clip: bool = False
 
     async def execute(self) -> None:
-        # resolve client class and arguments
-        default_provider = StateManager.default_provider()
-        provider, client_class, model, model_args = resolve_client(
-            self.opts.get(ModelOption), self.tier, default_provider, self.client_name
-        )
+        # resolve model override
+        if ModelOption in self.opts:
+            provider, model, model_args = ModelOption.resolve(self.opts[ModelOption], self.client_name, self.tier)
+        else:
+            provider = StateManager.default_provider()
+            model, model_args = lookup(provider, self.client_name, self.tier)
 
         # create client
         api_key = self.opts.get(KeyOption) or StateManager.load_api_key(provider)
-        client = client_class(api_key, model, **model_args)
+        client = load_client_class(provider, self.client_name)(api_key, model, **model_args)
 
         # create agent
         messages = [] if NewOption in self.opts else StateManager.load_messages()
@@ -116,30 +118,18 @@ class LLMCommand(Command):
         # build prompt
         prompt = await self.build_prompt()
 
-        # verbose output
+        # pre-prompt debug output
         if VerboseOption in self.opts:
-            qprint("MODEL PARAMETERS:", color="light_blue", file=sys.stderr)
-            qprint("model:", color="green", file=sys.stderr, end=" ")
-            qprint(f"{provider}:{client.model}", file=sys.stderr)
-            if client.model_args:
-                for k, v in flatten(client.model_args, reducer="dot").items():
-                    qprint(f"{k}:", color="green", file=sys.stderr, end=" ")
-                    qprint(f"{v}", file=sys.stderr)
-            if agent.system:
-                qprint("\nSYSTEM:", color="light_blue", file=sys.stderr)
-                qprint(agent.system, file=sys.stderr)
-            qprint("\nMESSAGES:", color="light_blue", file=sys.stderr)
-            for message in agent.messages:
-                end = "\n" if "\n" in message.content else " "
-                qprint(f"{message.role.value}:", color="green", file=sys.stderr, end=end)
-                qprint(message.content, file=sys.stderr)
-            end = "\n" if "\n" in prompt else " "
-            qprint(f"{Role.USER.value}:", color="green", file=sys.stderr, end=end)
-            qprint(prompt, file=sys.stderr)
-            qprint("\nRESPONSE:", color="light_blue", file=sys.stderr)
+            VerboseOption.pre_prompt_debug(provider, client, agent, prompt)
 
-        # send prompt and receive response
+        # send prompt to LLM and wait for response
         response = await agent.prompt(prompt)
+
+        # post-prompt debug output
+        if VerboseOption in self.opts:
+            VerboseOption.post_prompt_debug()
+
+        # process response
         self.process_response(response)
 
         # save session
@@ -224,6 +214,16 @@ class ExplainCommand(LLMCommand):
     required = True
     tier = Tier.HIGH
     system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
+
+
+class WebCommand(LLMCommand):
+    char = "w"
+    desc = "search the web"
+    value_type = ValueType.TEXT
+    required = True
+    tier = Tier.LOW
+    client_name = "WebClient"
+    system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context or background. The response should be less than a single sentence. Always search the internet."
 
 
 class CodeCommand(LLMCommand):
@@ -311,34 +311,6 @@ class ShellCommand(LLMCommand):
             super().process_response(response)
 
 
-class WebCommand(LLMCommand):
-    char = "w"
-    desc = "search the web"
-    value_type = ValueType.TEXT
-    required = True
-    tier = Tier.LOW
-    client_name = "WebClient"
-    system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context or background. The response should be less than a single sentence. Always search the internet."
-
-
-class ImageCommand(LLMCommand):
-    char = "i"
-    desc = "generate image"
-    value_type = ValueType.TEXT
-    required = True
-    tier = Tier.MED
-    client_name = "ImageClient"
-    system = "Generate an image of the following description."
-
-    def process_response(self, response: bytes) -> None:
-        """Save image to disk."""
-        text = self.value.translate(str.maketrans("", "", string.punctuation)).replace(" ", "_")
-        path = self.opts.get(OutputOption) or f"q_{text}"
-        path = path if path.lower().endswith(".png") else f"{path}.png"
-        Path(path).write_bytes(response)
-        qprint(f"Image saved to {path}", color="yellow", file=sys.stderr)
-
-
 class HelpCommand(LLMCommand):
     char = "h"
     desc = "get help with q"
@@ -346,66 +318,8 @@ class HelpCommand(LLMCommand):
     required = False
     tier = Tier.LOW
 
-    @staticmethod
-    def help_text(verbose: bool = False) -> str:
-        accent_color = "light_blue"
-        dim_color = "dark_grey"
-
-        type_col_len = max(len(flag.value_type.value or "") for flag in FLAG_MAP.values()) + 2
-        desc_col_len = max(len(flag.desc) for flag in FLAG_MAP.values()) if verbose else 0
-        tier_col_len = max(len(flag.tier.value) for flag in FLAG_MAP.values() if hasattr(flag, "tier"))
-
-        command_rows, option_rows = [], []
-        for flag in sorted(FLAG_MAP.values(), key=lambda flag: flag.char):
-            char = colored(f"-{flag.char}", accent_color)
-
-            accent_word = flag.__name__.removesuffix("Command").removesuffix("Option").lower()
-            desc = flag.desc.ljust(desc_col_len).replace(accent_word, colored(accent_word, accent_color))
-
-            value_type = flag.value_type.value or ""
-            if value_type:
-                if flag.default:
-                    value_type += f"={flag.default}"
-                value_type = f"<{value_type}>" if flag.required else f"[{value_type}]"
-            value_type = colored(value_type.ljust(type_col_len), dim_color)
-
-            row = f"  {char}  {value_type}  {desc}"
-            if verbose:
-                if hasattr(flag, "tier"):
-                    tier = colored(flag.tier.value.rjust(tier_col_len), dim_color)
-                    row += f"  {tier}"
-
-            row = row.rstrip()
-
-            if issubclass(flag, Command):
-                command_rows.append(row)
-            else:
-                option_rows.append(row)
-
-        lines = [
-            f"{colored('Version:', attrs=['bold'])} {__version__}",
-            f"{colored('Usage:', attrs=['bold'])} q [{colored('-flag', accent_color)} [{colored('value', dim_color)}]] ...",
-            "",
-            "  Flags can be combined: -sx = -s -x",
-            "  Use -- to disable remaining flag parsing.",
-            "  Commands are mutually exclusive.",
-            "",
-            colored("Commands:", attrs=["bold"]),
-            *command_rows,
-            "",
-            colored("Options:", attrs=["bold"]),
-            *option_rows,
-        ]
-
-        if verbose:
-            unused_flags = {f"-{char}" for char in string.ascii_lowercase if char not in FLAG_MAP}
-            lines += [
-                "",
-                colored("Unused:", attrs=["bold"]),
-                "  " + colored(", ".join(sorted(unused_flags)), accent_color),
-            ]
-
-        return "\n".join(lines)
+    ACCENT_COLOR = "light_blue"
+    DIM_COLOR = "dark_grey"
 
     @property
     def system(self) -> str:
@@ -424,7 +338,82 @@ class HelpCommand(LLMCommand):
         if self.value:
             await super().execute()
         else:
-            qprint(self.help_text(VerboseOption in self.opts))
+            qprint(self._help_text(VerboseOption in self.opts))
+
+    def _help_text(self, verbose: bool = False) -> str:
+        type_col_len = max(len(flag.value_type.value or "") for flag in FLAG_MAP.values()) + 2
+        desc_col_len = max(len(flag.desc) for flag in FLAG_MAP.values()) if verbose else 0
+        tier_col_len = max(len(flag.tier.value) for flag in FLAG_MAP.values() if hasattr(flag, "tier"))
+
+        command_rows, option_rows = [], []
+        for flag in sorted(FLAG_MAP.values(), key=lambda flag: flag.char):
+            char = colored(f"-{flag.char}", self.ACCENT_COLOR)
+
+            accent_word = flag.__name__.removesuffix("Command").removesuffix("Option").lower()
+            desc = flag.desc.ljust(desc_col_len).replace(accent_word, colored(accent_word, self.ACCENT_COLOR))
+
+            value_type = flag.value_type.value or ""
+            if value_type:
+                if flag.default:
+                    value_type += f"={flag.default}"
+                value_type = f"<{value_type}>" if flag.required else f"[{value_type}]"
+            value_type = colored(value_type.ljust(type_col_len), self.DIM_COLOR)
+
+            row = f"  {char}  {value_type}  {desc}"
+            if verbose:
+                if hasattr(flag, "tier"):
+                    tier = colored(flag.tier.value.rjust(tier_col_len), self.DIM_COLOR)
+                    row += f"  {tier}"
+
+            row = row.rstrip()
+
+            if issubclass(flag, Command):
+                command_rows.append(row)
+            else:
+                option_rows.append(row)
+
+        lines = [
+            f"{colored('Version:', attrs=['bold'])} {__version__}",
+            f"{colored('Usage:', attrs=['bold'])} q [{colored('-flag', self.ACCENT_COLOR)} [{colored('value', self.DIM_COLOR)}]] ...",
+            "",
+            "  Flags can be combined: -sx = -s -x",
+            "  Use -- to disable remaining flag parsing.",
+            "  Commands are mutually exclusive.",
+            "",
+            colored("Commands:", attrs=["bold"]),
+            *command_rows,
+            "",
+            colored("Options:", attrs=["bold"]),
+            *option_rows,
+        ]
+
+        if verbose:
+            unused_flags = {f"-{char}" for char in string.ascii_lowercase if char not in FLAG_MAP}
+            lines += [
+                "",
+                colored("Unused:", attrs=["bold"]),
+                "  " + colored(", ".join(sorted(unused_flags)), self.ACCENT_COLOR),
+            ]
+
+        return "\n".join(lines)
+
+
+class ImageCommand(LLMCommand):
+    char = "i"
+    desc = "generate image"
+    value_type = ValueType.TEXT
+    required = True
+    tier = Tier.MED
+    client_name = "ImageClient"
+    system = "Generate an image of the following description."
+
+    def process_response(self, response: bytes) -> None:
+        """Save image to disk."""
+        text = self.value.translate(str.maketrans("", "", string.punctuation)).replace(" ", "_")
+        path = self.opts.get(OutputOption) or f"q_{text}"
+        path = path if path.lower().endswith(".png") else f"{path}.png"
+        Path(path).write_bytes(response)
+        qprint(f"Image saved to {path}", color="yellow", file=sys.stderr)
 
 
 # region Options
@@ -473,6 +462,35 @@ class ModelOption(Flag):
     value_type = ValueType.STR
     required = True
 
+    @classmethod
+    def resolve(cls, value: str, client_name: str, tier: Tier) -> tuple[str, str, dict]:
+        """Resolve a model flag value to (provider, model_name, model_args)."""
+        value = value.lower()
+        providers = set(MODEL_CONFIGS)
+        tiers = {t.value for t in Tier}
+
+        # provider:tier/model
+        if ":" in value:
+            provider, suffix = value.split(":", 1)
+            if provider not in providers:
+                raise InputError(f"unknown provider: {provider}")
+            # provider:tier (e.g. "openai:high")
+            if suffix in tiers:
+                return provider, *lookup(provider, client_name, Tier(suffix))
+            # provider:model (e.g. "openai:gpt-4.1-nano")
+            return provider, suffix, {}
+
+        # provider (e.g. "openai")
+        if value in providers:
+            return value, *lookup(value, client_name, tier)
+
+        # tier (e.g. "high")
+        if value in tiers:
+            provider = StateManager.default_provider()
+            return provider, *lookup(provider, client_name, Tier(value))
+
+        raise InputError(f"cannot resolve model: {value}")
+
 
 class NewOption(Flag):
     char = "n"
@@ -489,6 +507,34 @@ class OutputOption(Flag):
 class VerboseOption(Flag):
     char = "v"
     desc = "verbose output"
+
+    PRIMARY_COLOR = "light_blue"
+    SECONDARY_COLOR = "green"
+
+    @classmethod
+    def pre_prompt_debug(cls, provider: str, client: Client, agent: ChatAgent, prompt: str) -> None:
+        qprint("MODEL PARAMETERS:", color=cls.PRIMARY_COLOR, file=sys.stderr)
+        qprint("model:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=" ")
+        qprint(f"{provider}:{client.model}", file=sys.stderr)
+        if client.model_args:
+            for k, v in flatten(client.model_args, reducer="dot").items():
+                qprint(f"{k}:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=" ")
+                qprint(f"{v}", file=sys.stderr)
+        if agent.system:
+            qprint("\nSYSTEM:", color=cls.PRIMARY_COLOR, file=sys.stderr)
+            qprint(agent.system, file=sys.stderr)
+        qprint("\nMESSAGES:", color=cls.PRIMARY_COLOR, file=sys.stderr)
+        for message in agent.messages:
+            end = "\n" if "\n" in message.content else " "
+            qprint(f"{message.role.value}:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=end)
+            qprint(message.content, file=sys.stderr)
+        end = "\n" if "\n" in prompt else " "
+        qprint(f"{Role.USER.value}:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=end)
+        qprint(prompt, file=sys.stderr)
+
+    @classmethod
+    def post_prompt_debug(cls) -> None:
+        qprint("\nRESPONSE:", color=cls.PRIMARY_COLOR, file=sys.stderr)
 
 
 class ExecuteOption(Flag):
@@ -526,6 +572,7 @@ class DirectoryOption(Flag):
     char = "d"
     desc = "add directory layout"
     value_type = ValueType.STR
+    default = "."
 
     @classmethod
     def get_layout(cls, path: str) -> str:
