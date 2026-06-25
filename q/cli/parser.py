@@ -11,10 +11,10 @@ def _resolve_pending(pending_flags: list[type[Flag]], pending_tokens: list[str])
     Flags with required values take priority over optional ones.
     """
 
-    bindings: dict[type[Flag], Any] = { flag: flag.default for flag in pending_flags }
+    bindings: dict[type[Flag], Any] = { flag: flag.value_default for flag in pending_flags }
 
-    required_flags = [flag for flag in pending_flags if flag.required]
-    optional_flags = [flag for flag in pending_flags if not flag.required and flag.value_type != ValueType.NONE]
+    required_flags = [flag for flag in pending_flags if flag.value_required]
+    optional_flags = [flag for flag in pending_flags if not flag.value_required and flag.value_type != ValueType.NONE]
 
     # bind tokens to a single flag if possible
     if pending_tokens:
@@ -119,6 +119,15 @@ def parse(argv: list[str]) -> Command:
     command_flags = [flag for flag in bindings if issubclass(flag, Command)]
     if len(command_flags) > 1:
         raise InputError("multiple commands: " + ", ".join(f"-{flag.char}" for flag in command_flags))
+
+    # validate options
+    for flag in bindings:
+        if flag.requires and not any(command in bindings for command in flag.requires):
+            raise InputError(
+                f"-{flag.char} requires "
+                + " or ".join(", ".join(f"-{command.char}" for command in flag.requires).rsplit(", ", 1))
+            )
+
     if not command_flags:
         if not bindings:  # blank input
             return HelpCommand(None, {})

@@ -32,13 +32,12 @@ from .terminal import InputError, qprint
 
 
 FLAG_MAP: dict[str, type[Flag]] = {}
-COMMAND_MAP: dict[str, type[Command]] = {}
 
 
 def get_default_command() -> type[Command]:
     char = StateManager.load_command_char()
-    if char in COMMAND_MAP:
-        return COMMAND_MAP[char]
+    if char in FLAG_MAP and issubclass(FLAG_MAP[char], Command):
+        return FLAG_MAP[char]
     return TextCommand
 
 
@@ -62,8 +61,9 @@ class Flag(ABC):
     char: str
     desc: str
     value_type: ValueType = ValueType.NONE
-    required: bool = False
-    default: Any = None
+    value_required: bool = False
+    value_default: Any = None
+    requires: tuple[type[Command], ...] = ()
 
     def __init_subclass__(cls, **kwargs):
         """Auto-register concrete subclass to FLAG_MAP."""
@@ -78,12 +78,6 @@ class Command(Flag):
     def __init__(self, value: str | None, opts: dict[type[Flag], Any]):
         self.value = value
         self.opts = opts
-
-    def __init_subclass__(cls, **kwargs):
-        """Auto-register concrete subclass to COMMAND_MAP."""
-        super().__init_subclass__(**kwargs)
-        if hasattr(cls, "char"):
-            COMMAND_MAP[cls.char] = cls
 
     @abstractmethod
     async def execute(self) -> None: ...
@@ -202,7 +196,7 @@ class TextCommand(LLMCommand):
     char = "t"
     desc = "generate text"
     value_type = ValueType.TEXT
-    required = True
+    value_required = True
     tier = Tier.MED
     system = ""
 
@@ -211,7 +205,7 @@ class ExplainCommand(LLMCommand):
     char = "e"
     desc = "explain code/concept"
     value_type = ValueType.TEXT
-    required = True
+    value_required = True
     tier = Tier.HIGH
     system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
 
@@ -220,7 +214,7 @@ class WebCommand(LLMCommand):
     char = "w"
     desc = "search the web"
     value_type = ValueType.TEXT
-    required = True
+    value_required = True
     tier = Tier.LOW
     client_name = "WebClient"
     system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context or background. The response should be less than a single sentence. Always search the internet."
@@ -230,7 +224,7 @@ class CodeCommand(LLMCommand):
     char = "c"
     desc = "generate code"
     value_type = ValueType.TEXT
-    required = True
+    value_required = True
     tier = Tier.HIGH
     clip = True
 
@@ -244,7 +238,7 @@ class ShellCommand(LLMCommand):
     char = "s"
     desc = "generate shell command"
     value_type = ValueType.TEXT
-    required = False
+    value_required = False
     tier = Tier.MED
     clip = True
 
@@ -315,7 +309,7 @@ class HelpCommand(LLMCommand):
     char = "h"
     desc = "get help with q"
     value_type = ValueType.TEXT
-    required = False
+    value_required = False
     tier = Tier.LOW
 
     ACCENT_COLOR = "light_blue"
@@ -354,9 +348,9 @@ class HelpCommand(LLMCommand):
 
             value_type = flag.value_type.value or ""
             if value_type:
-                if flag.default:
-                    value_type += f"={flag.default}"
-                value_type = f"<{value_type}>" if flag.required else f"[{value_type}]"
+                if flag.value_default:
+                    value_type += f"={flag.value_default}"
+                value_type = f"<{value_type}>" if flag.value_required else f"[{value_type}]"
             value_type = colored(value_type.ljust(type_col_len), self.DIM_COLOR)
 
             row = f"  {char}  {value_type}  {desc}"
@@ -402,7 +396,7 @@ class ImageCommand(LLMCommand):
     char = "i"
     desc = "generate image"
     value_type = ValueType.TEXT
-    required = True
+    value_required = True
     tier = Tier.MED
     client_name = "ImageClient"
     system = "Generate an image of the following description."
@@ -423,7 +417,7 @@ class FileOption(Flag):
     char = "f"
     desc = "add file content"
     value_type = ValueType.STR_LIST
-    required = True
+    value_required = True
 
     @classmethod
     def get_content(cls, paths: list[str]) -> str:
@@ -446,26 +440,26 @@ class KeyOption(Flag):
     char = "k"
     desc = "override API key"
     value_type = ValueType.STR
-    required = True
+    value_required = True
 
 
 class LanguageOption(Flag):
     char = "l"
     desc = "override code language"
     value_type = ValueType.STR
-    required = True
+    value_required = True
+    requires = (CodeCommand,)
 
 
 class ModelOption(Flag):
     char = "m"
     desc = "override model"
     value_type = ValueType.STR
-    required = True
+    value_required = True
 
     @classmethod
     def resolve(cls, value: str, client_name: str, tier: Tier) -> tuple[str, str, dict]:
         """Resolve a model flag value to (provider, model_name, model_args)."""
-        value = value.lower()
         providers = set(MODEL_CONFIGS)
         tiers = {t.value for t in Tier}
 
@@ -501,7 +495,7 @@ class OutputOption(Flag):
     char = "o"
     desc = "output path"
     value_type = ValueType.STR
-    required = True
+    value_required = True
 
 
 class VerboseOption(Flag):
@@ -540,13 +534,14 @@ class VerboseOption(Flag):
 class ExecuteOption(Flag):
     char = "x"
     desc = "execute shell command"
+    requires = (ShellCommand,)
 
 
 class UndoOption(Flag):
     char = "z"
     desc = "undo exchanges"
     value_type = ValueType.INT
-    default = 1
+    value_default = 1
 
 
 # region Reserved Flags
@@ -557,7 +552,7 @@ class AgentCommand(Command):
     char = "a"
     desc = "delegate to agent"
     value_type = ValueType.STR
-    required = True
+    value_required = True
     tier = Tier.HIGH
 
 
@@ -565,14 +560,14 @@ class BatchOption(Flag):
     char = "b"
     desc = "batch process inputs"
     value_type = ValueType.STR
-    required = True
+    value_required = True
 
 
 class DirectoryOption(Flag):
     char = "d"
     desc = "add directory layout"
     value_type = ValueType.STR
-    default = "."
+    value_default = "."
 
     @classmethod
     def get_layout(cls, path: str) -> str:
@@ -588,14 +583,14 @@ class ParametersOption(Flag):
     char = "p"
     desc = "override model parameters"
     value_type = ValueType.TEXT
-    required = True
+    value_required = True
 
 
 class RetrievalCommand(Command):
     char = "r"
     desc = "retrieval-augmented generation"
     value_type = ValueType.STR
-    required = True
+    value_required = True
     tier = Tier.MED
 
 
@@ -603,6 +598,6 @@ class UserCommand(Command):
     char = "u"
     desc = "user command"
     value_type = ValueType.STR
-    required = True
+    value_required = True
     tier = Tier.MED
 """
