@@ -1,8 +1,9 @@
 import base64
 from typing import Any
 
-from ..client import Client
-from ..message import Message, Role
+from ..core import Client, Message, Role
+
+__all__ = ["ImageClient", "TextClient", "WebClient"]
 
 ROLE_MAP = {Role.USER: "user_input", Role.ASSISTANT: "model_output"}
 

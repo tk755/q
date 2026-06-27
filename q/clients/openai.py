@@ -1,8 +1,9 @@
 import base64
 from typing import Any
 
-from ..client import Client
-from ..message import Message
+from ..core import Client, Message
+
+__all__ = ["ImageClient", "TextClient", "WebClient"]
 
 
 class OpenAIClient[T](Client[T]):

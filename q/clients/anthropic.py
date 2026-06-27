@@ -1,7 +1,8 @@
 from typing import Any
 
-from ..client import Client
-from ..message import Message, Role
+from ..core import Client, Message, Role
+
+__all__ = ["TextClient"]
 
 
 class AnthropicClient[T](Client[T]):

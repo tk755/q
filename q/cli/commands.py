@@ -18,11 +18,9 @@ import pyperclip
 from flatten_dict import flatten
 from termcolor import colored
 
-from q import __version__
+from q import Client, Role, __version__
 from q.agents import ChatAgent
-from q.client import Client
-from q.message import Role
-from q.providers import load_client_class
+from q.clients import load_client_class
 
 from .models import MODEL_CONFIGS, Tier, lookup
 from .session import StateManager

@@ -1,7 +1,6 @@
 import asyncio
 
-from .client import Client
-from .message import Message, Role
+from .core import Client, Message, Role
 
 
 class ChatAgent[T]:

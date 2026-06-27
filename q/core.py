@@ -1,9 +1,21 @@
 import asyncio
 import random
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any
 
-from .message import Message
+from pydantic import BaseModel
+
+
+class Role(str, Enum):
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    USER = "user"
+
+
+class Message(BaseModel):
+    role: Role
+    content: str
 
 
 class Client[T](ABC):

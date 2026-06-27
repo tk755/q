@@ -1,13 +1,13 @@
 import importlib
 from types import ModuleType
 
-from q.client import Client
+from q.core import Client
 
 
 def load_provider_module(provider_name: str) -> ModuleType:
     """Dynamically load provider module."""
     try:
-        return importlib.import_module(f"q.providers.{provider_name}")
+        return importlib.import_module(f"q.clients.{provider_name}")
     except ModuleNotFoundError as err:
         raise ImportError(f"unknown provider: {provider_name}") from err
 

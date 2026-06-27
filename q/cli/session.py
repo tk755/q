@@ -7,7 +7,8 @@ import psutil
 from dotenv import dotenv_values, set_key
 from pydantic import BaseModel, Field
 
-from ..message import Message
+from q import Message
+
 from .terminal import qinput, qprint
 
 RESOURCES_DIR = Path.home() / ".q"
