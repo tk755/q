@@ -11,7 +11,7 @@ class Tier(Enum):
 
 MODEL_CONFIGS = {
     "openai": {
-        'TextClient': {
+        "TextClient": {
             Tier.LOW: {
                 "model": "gpt-5.4-nano",
                 "reasoning": {"effort": "low"},
@@ -25,9 +25,23 @@ MODEL_CONFIGS = {
                 "reasoning": {"effort": "high"},
             },
         },
+        "ImageClient": {
+            Tier.LOW: {
+                "model": "gpt-5.4-nano",
+                "quality": "low",
+            },
+            Tier.MED: {
+                "model": "gpt-5.4-nano",
+                "quality": "medium",
+            },
+            Tier.HIGH: {
+                "model": "gpt-5.4-nano",
+                "quality": "high",
+            },
+        },
     },
     "anthropic": {
-        'TextClient': {
+        "TextClient": {
             Tier.LOW: {
                 "model": "claude-haiku-4-5",
                 "max_tokens": 2000,
@@ -42,34 +56,38 @@ MODEL_CONFIGS = {
                 "thinking": {"type": "adaptive"},
                 "output_config": {"effort": "high"},
             },
-        }
+        },
     },
     "google": {
-        'TextClient': {
+        "TextClient": {
             Tier.LOW: {
                 "model": "gemini-3.1-flash-lite",
             },
             Tier.MED: {
-                "model": "gemini-3-flash-preview",
-                "generation_config": {"thinking_level": "medium"},
+                "model": "gemini-3.5-flash",
+                "generation_config": {"thinking_level": "low"},
             },
             Tier.HIGH: {
                 "model": "gemini-3.5-flash",
                 "generation_config": {"thinking_level": "high"},
             },
         },
-    }
+        "ImageClient": {
+            Tier.LOW: {
+                "model": "gemini-2.5-flash-image",
+            },
+            Tier.MED: {
+                "model": "gemini-3.1-flash-image",
+            },
+            Tier.HIGH: {
+                "model": "gemini-3-pro-image",
+            },
+        },
+    },
 }
 
-MODEL_CONFIGS['openai']['WebClient'] = MODEL_CONFIGS['openai']['TextClient']
-MODEL_CONFIGS['openai']['ImageClient'] = MODEL_CONFIGS['openai']['TextClient']
-
-MODEL_CONFIGS['google']['WebClient'] = MODEL_CONFIGS['google']['TextClient']
-MODEL_CONFIGS['google']['ImageClient'] = {
-    Tier.LOW: {"model": "gemini-2.5-flash-image"},
-    Tier.MED: {"model": "gemini-3.1-flash-image"},
-    Tier.HIGH: {"model": "gemini-3-pro-image"},
-}
+MODEL_CONFIGS["openai"]["WebClient"] = MODEL_CONFIGS["openai"]["TextClient"]
+MODEL_CONFIGS["google"]["WebClient"] = MODEL_CONFIGS["google"]["TextClient"]
 
 
 def lookup(provider: str, client_name: str, tier: Tier) -> tuple[str, dict]:

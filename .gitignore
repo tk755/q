@@ -65,4 +65,6 @@ ehthumbs.db
 Thumbs.db
 
 # Project specific
+.claude/
+.ruff_cache/
 *.png
