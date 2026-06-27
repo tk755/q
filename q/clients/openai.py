@@ -1,51 +1,45 @@
 import base64
-from typing import Any
+from typing import Any, ClassVar
 
-from ..core import Client, Message
+from .base import Client, Message, Role
 
 __all__ = ["ImageClient", "TextClient", "WebClient"]
 
 
 class OpenAIClient[T](Client[T]):
-    """Base client for OpenAI API."""
+    """Base client for the OpenAI Responses API."""
 
-    def _import_sdk(self) -> None:
+    ROLES: ClassVar[dict[Role, str]] = {Role.USER: "user", Role.ASSISTANT: "assistant"}
+
+    @classmethod
+    def _create_async_client(cls, api_key: str) -> Any:
         import openai
-        self._openai = openai
+        return openai.AsyncOpenAI(api_key=api_key)
 
-    def _should_retry(self, error: Exception) -> bool:
-        if isinstance(
-            error,
-            (
-                self._openai.RateLimitError,
-                self._openai.APIConnectionError,
-                self._openai.APITimeoutError,
-                self._openai.InternalServerError,
-            ),
-        ):
+    @classmethod
+    def _should_retry(cls, error: Exception) -> bool:
+        import openai
+        if isinstance(error, openai.APIConnectionError):  # includes timeouts
             return True
-
-        if isinstance(error, self._openai.APIStatusError):
-            if error.status_code == 429 or 500 <= error.status_code < 600:
-                return True
-
+        if isinstance(error, openai.APIStatusError):
+            return error.status_code == 429 or 500 <= error.status_code < 600
         return False
 
-    def _create_async_client(self) -> Any:
-        return self._openai.AsyncOpenAI(api_key=self.api_key)
+    @classmethod
+    def _format_message(cls, message: Message) -> dict:
+        """Format a single message into Responses API format."""
+        return {"role": cls.ROLES[message.role], "content": message.content}
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict[str, str]]:
-        return [msg.model_dump(include={"role", "content"}) for msg in messages]
+    async def _request(self, formatted_messages: list[dict], system: str | None, model_args: dict) -> Any:
+        """Send a request to the Responses API."""
+        kwargs = {"model": self.model, "input": formatted_messages, **model_args}
+        if system:
+            kwargs["input"] = [{"role": "system", "content": system}, *formatted_messages]
+        return await self._async_client.responses.create(**kwargs)
 
-    async def _generate(self, messages: list[Message]) -> T:
-        response = await self._async_client.responses.create(
-            input=self._convert_messages(messages),
-            model=self.model,
-            **self.model_args,
-        )
-        return self._extract(response)
-
-    def _extract(self, response: Any) -> T:
+    @classmethod
+    def _extract_output(cls, response: Any) -> T:
+        """Extract the text output from a Responses API response."""
         return response.output_text
 
 
@@ -53,17 +47,29 @@ class TextClient(OpenAIClient[str]): ...
 
 
 class WebClient(OpenAIClient[str]):
-    def __init__(self, api_key: str, model: str, *, search_context_size: str = "low", **model_args):
-        model_args["tools"] = [{"type": "web_search_preview", "search_context_size": search_context_size}]
-        super().__init__(api_key, model, **model_args)
+    @classmethod
+    def _inject_args(cls, model_args: dict) -> dict:
+        """Add the web-search tool, merging with any existing tools."""
+        model_args = super()._inject_args(model_args)
+        tools = model_args.get("tools", [])
+        if not any(tool.get("type") == "web_search_preview" for tool in tools):
+            tools = [*tools, {"type": "web_search_preview", "search_context_size": "low"}]
+        return {**model_args, "tools": tools}
 
 
 class ImageClient(OpenAIClient[bytes]):
-    def __init__(self, api_key: str, model: str, *, size: str = "1024x1024", quality: str = "auto", **model_args):
-        model_args["tools"] = [{"type": "image_generation", "size": size, "quality": quality}]
-        super().__init__(api_key, model, **model_args)
+    @classmethod
+    def _inject_args(cls, model_args: dict) -> dict:
+        """Add the image-generation tool, merging with any existing tools."""
+        model_args = super()._inject_args(model_args)
+        tools = model_args.get("tools", [])
+        if not any(tool.get("type") == "image_generation" for tool in tools):
+            tools = [*tools, {"type": "image_generation"}]
+        return {**model_args, "tools": tools}
 
-    def _extract(self, response: Any) -> bytes:
+    @classmethod
+    def _extract_output(cls, response: Any) -> bytes:
+        """Extract the generated image bytes from the response."""
         for output in response.output:
             if output.type == "image_generation_call":
                 return base64.b64decode(output.result)

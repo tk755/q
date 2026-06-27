@@ -18,9 +18,7 @@ import pyperclip
 from flatten_dict import flatten
 from termcolor import colored
 
-from q import Client, Role, __version__
-from q.agents import ChatAgent
-from q.clients import load_client_class
+from q import Client, Role, __version__, load_client_class
 
 from .models import MODEL_CONFIGS, Tier, lookup
 from .session import StateManager
@@ -97,25 +95,22 @@ class LLMCommand(Command):
             provider = StateManager.default_provider()
             model, model_args = lookup(provider, self.client_name, self.tier)
 
-        # create client
+        # create client with prior history
         api_key = self.opts.get(KeyOption) or StateManager.load_api_key(provider)
-        client = load_client_class(provider, self.client_name)(api_key, model, **model_args)
-
-        # create agent
         messages = [] if NewOption in self.opts else StateManager.load_messages()
-        agent = ChatAgent(client, self.system, messages)
+        client = load_client_class(provider, self.client_name)(api_key, model, messages=messages, **model_args)
         if UndoOption in self.opts:
-            agent.drop_exchanges(self.opts[UndoOption])
+            client.drop_exchanges(self.opts[UndoOption])
 
         # build prompt
         prompt = await self.build_prompt()
 
         # pre-prompt debug output
         if VerboseOption in self.opts:
-            VerboseOption.pre_prompt_debug(provider, client, agent, prompt)
+            VerboseOption.pre_prompt_debug(provider, client, self.system, prompt)
 
         # send prompt to LLM and wait for response
-        response = await agent.prompt(prompt)
+        response = await client.generate(prompt, self.system)
 
         # post-prompt debug output
         if VerboseOption in self.opts:
@@ -125,7 +120,7 @@ class LLMCommand(Command):
         self.process_response(response)
 
         # save session
-        StateManager.save_session(self.char, agent.messages)
+        StateManager.save_session(self.char, client.messages)
 
     async def build_prompt(self) -> str:
         """Build the user prompt string."""
@@ -504,7 +499,7 @@ class VerboseOption(Flag):
     SECONDARY_COLOR = "green"
 
     @classmethod
-    def pre_prompt_debug(cls, provider: str, client: Client, agent: ChatAgent, prompt: str) -> None:
+    def pre_prompt_debug(cls, provider: str, client: Client, system: str | None, prompt: str) -> None:
         qprint("MODEL PARAMETERS:", color=cls.PRIMARY_COLOR, file=sys.stderr)
         qprint("model:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=" ")
         qprint(f"{provider}:{client.model}", file=sys.stderr)
@@ -512,11 +507,11 @@ class VerboseOption(Flag):
             for k, v in flatten(client.model_args, reducer="dot").items():
                 qprint(f"{k}:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=" ")
                 qprint(f"{v}", file=sys.stderr)
-        if agent.system:
+        if system:
             qprint("\nSYSTEM:", color=cls.PRIMARY_COLOR, file=sys.stderr)
-            qprint(agent.system, file=sys.stderr)
+            qprint(system, file=sys.stderr)
         qprint("\nMESSAGES:", color=cls.PRIMARY_COLOR, file=sys.stderr)
-        for message in agent.messages:
+        for message in client.messages:
             end = "\n" if "\n" in message.content else " "
             qprint(f"{message.role.value}:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=end)
             qprint(message.content, file=sys.stderr)

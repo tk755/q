@@ -1,67 +1,51 @@
-from typing import Any
+from typing import Any, ClassVar
 
-from ..core import Client, Message, Role
+from .base import Client, Message, Role
 
 __all__ = ["TextClient"]
 
 
 class AnthropicClient[T](Client[T]):
-    """Base client for Anthropic API."""
+    """Base client for the Anthropic Messages API."""
 
+    ROLES: ClassVar[dict[Role, str]] = {Role.USER: "user", Role.ASSISTANT: "assistant"}
     DEFAULT_MAX_TOKENS = 1024
 
-    def __init__(self, api_key: str, model: str, **model_args):
-        model_args.setdefault("max_tokens", self.DEFAULT_MAX_TOKENS)
-        super().__init__(api_key, model, **model_args)
-
-    def _import_sdk(self) -> None:
+    @classmethod
+    def _create_async_client(cls, api_key: str) -> Any:
         import anthropic
-        self._anthropic = anthropic
+        return anthropic.AsyncAnthropic(api_key=api_key)
 
-    def _should_retry(self, error: Exception) -> bool:
-        if isinstance(
-            error,
-            (
-                self._anthropic.RateLimitError,
-                self._anthropic.APIConnectionError,
-                self._anthropic.APITimeoutError,
-                self._anthropic.InternalServerError,
-            ),
-        ):
+    @classmethod
+    def _should_retry(cls, error: Exception) -> bool:
+        import anthropic
+        if isinstance(error, anthropic.APIConnectionError):  # includes timeouts
             return True
-
-        if isinstance(error, self._anthropic.APIStatusError):
-            if error.status_code == 429 or 500 <= error.status_code < 600:
-                return True
-
+        if isinstance(error, anthropic.APIStatusError):
+            return error.status_code == 429 or 500 <= error.status_code < 600
         return False
 
-    def _create_async_client(self) -> Any:
-        return self._anthropic.AsyncAnthropic(api_key=self.api_key)
+    @classmethod
+    def _inject_args(cls, model_args: dict) -> dict:
+        """Set the default max_tokens if missing."""
+        return {"max_tokens": cls.DEFAULT_MAX_TOKENS, **super()._inject_args(model_args)}
 
-    def _convert_messages(self, messages: list[Message]) -> tuple[list[dict] | None, list[dict]]:
-        """Convert Message objects to API format."""
-        system_prompt = None
-        api_messages = []
+    @classmethod
+    def _format_message(cls, message: Message) -> dict:
+        """Format a single message into Messages API format."""
+        return {"role": cls.ROLES[message.role], "content": message.content}
 
-        for msg in messages:
-            if msg.role == Role.SYSTEM:
-                system_prompt = [{"type": "text", "text": msg.content}]
-            else:
-                api_messages.append(msg.model_dump(include={"role", "content"}))
+    async def _request(self, formatted_messages: list[dict], system: str | None, model_args: dict) -> Any:
+        """Send a request to the Messages API."""
+        kwargs = {"model": self.model, "messages": formatted_messages, **model_args}
+        if system:
+            kwargs["system"] = system
+        return await self._async_client.messages.create(**kwargs)
 
-        return system_prompt, api_messages
-
-
-class TextClient(AnthropicClient[str]):
-    """Anthropic text generation client."""
-
-    async def _generate(self, messages: list[Message]) -> str:
-        system_prompt, api_messages = self._convert_messages(messages)
-
-        kwargs = {"messages": api_messages, "model": self.model, **self.model_args}
-        if system_prompt is not None:
-            kwargs["system"] = system_prompt
-
-        response = await self._async_client.messages.create(**kwargs)
+    @classmethod
+    def _extract_output(cls, response: Any) -> T:
+        """Join the text blocks of a Messages API response."""
         return "".join(block.text for block in response.content if block.type == "text")
+
+
+class TextClient(AnthropicClient[str]): ...

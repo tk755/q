@@ -1,7 +1,7 @@
 import importlib
 from types import ModuleType
 
-from q.core import Client
+from .base import Client
 
 
 def load_provider_module(provider_name: str) -> ModuleType:

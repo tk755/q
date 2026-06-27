@@ -1,13 +1,16 @@
-import sys
+from .clients import load_client_class
+from .clients.base import Client, Message, Role
 
-from .clients import anthropic, google, openai
-from .core import Client, Message, Role
+__all__ = ["Client", "Message", "Role", "load_client_class"]
 
 __version__ = "2.0.0.dev10"
 
-__all__ = ["Client", "Message", "Role"]
+# expose providers as top-level modules
+import sys as _sys  # noqa: I001
+from .clients import anthropic, google, openai
 
-# expose provider modules at the package root so `from q.openai import TextClient` works
-sys.modules["q.openai"] = openai
-sys.modules["q.anthropic"] = anthropic
-sys.modules["q.google"] = google
+_sys.modules[f"{__name__}.openai"] = openai
+_sys.modules[f"{__name__}.anthropic"] = anthropic
+_sys.modules[f"{__name__}.google"] = google
+
+del _sys
