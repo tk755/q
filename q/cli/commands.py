@@ -512,9 +512,9 @@ class VerboseOption(Flag):
             qprint(system, file=sys.stderr)
         qprint("\nMESSAGES:", color=cls.PRIMARY_COLOR, file=sys.stderr)
         for message in client.messages:
-            end = "\n" if "\n" in message.content else " "
+            end = "\n" if "\n" in message.text else " "
             qprint(f"{message.role.value}:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=end)
-            qprint(message.content, file=sys.stderr)
+            qprint(message.text, file=sys.stderr)
         end = "\n" if "\n" in prompt else " "
         qprint(f"{Role.USER.value}:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=end)
         qprint(prompt, file=sys.stderr)

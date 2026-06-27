@@ -28,15 +28,15 @@ MODEL_CONFIGS = {
         "ImageClient": {
             Tier.LOW: {
                 "model": "gpt-5.4-nano",
-                "quality": "low",
+                "tools": [{"type": "image_generation", "quality": "low"}],
             },
             Tier.MED: {
                 "model": "gpt-5.4-nano",
-                "quality": "medium",
+                "tools": [{"type": "image_generation", "quality": "medium"}],
             },
             Tier.HIGH: {
                 "model": "gpt-5.4-nano",
-                "quality": "high",
+                "tools": [{"type": "image_generation", "quality": "high"}],
             },
         },
     },

@@ -11,13 +11,13 @@ class OpenAIClient[T](Client[T]):
 
     ROLES: ClassVar[dict[Role, str]] = {Role.USER: "user", Role.ASSISTANT: "assistant"}
 
-    @classmethod
-    def _create_async_client(cls, api_key: str) -> Any:
+    @staticmethod
+    def _create_async_client(api_key: str) -> Any:
         import openai
         return openai.AsyncOpenAI(api_key=api_key)
 
-    @classmethod
-    def _should_retry(cls, error: Exception) -> bool:
+    @staticmethod
+    def _should_retry(error: Exception) -> bool:
         import openai
         if isinstance(error, openai.APIConnectionError):  # includes timeouts
             return True
@@ -28,7 +28,11 @@ class OpenAIClient[T](Client[T]):
     @classmethod
     def _format_message(cls, message: Message) -> dict:
         """Format a single message into Responses API format."""
-        return {"role": cls.ROLES[message.role], "content": message.content}
+        content = [{"type": "input_text", "text": message.text}] if message.text else []
+        for image in message.images or []:
+            data_url = f"data:{cls._sniff_mime(image)};base64,{base64.b64encode(image).decode()}"
+            content.append({"type": "input_image", "detail": "auto", "image_url": data_url})
+        return {"role": cls.ROLES[message.role], "content": content}
 
     async def _request(self, formatted_messages: list[dict], system: str | None, model_args: dict) -> Any:
         """Send a request to the Responses API."""
@@ -37,8 +41,8 @@ class OpenAIClient[T](Client[T]):
             kwargs["input"] = [{"role": "system", "content": system}, *formatted_messages]
         return await self._async_client.responses.create(**kwargs)
 
-    @classmethod
-    def _extract_output(cls, response: Any) -> T:
+    @staticmethod
+    def _extract_output(response: Any) -> T:
         """Extract the text output from a Responses API response."""
         return response.output_text
 
@@ -67,10 +71,10 @@ class ImageClient(OpenAIClient[bytes]):
             tools = [*tools, {"type": "image_generation"}]
         return {**model_args, "tools": tools}
 
-    @classmethod
-    def _extract_output(cls, response: Any) -> bytes:
+    @staticmethod
+    def _extract_output(response: Any) -> bytes:
         """Extract the generated image bytes from the response."""
         for output in response.output:
             if output.type == "image_generation_call":
                 return base64.b64decode(output.result)
-        raise ValueError("No image_generation_call found")
+        raise ValueError("no image_generation_call found")

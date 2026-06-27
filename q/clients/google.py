@@ -11,13 +11,13 @@ class GeminiClient[T](Client[T]):
 
     ROLES: ClassVar[dict[Role, str]] = {Role.USER: "user_input", Role.ASSISTANT: "model_output"}
 
-    @classmethod
-    def _create_async_client(cls, api_key: str) -> Any:
+    @staticmethod
+    def _create_async_client(api_key: str) -> Any:
         from google import genai
         return genai.Client(api_key=api_key).aio
 
-    @classmethod
-    def _should_retry(cls, error: Exception) -> bool:
+    @staticmethod
+    def _should_retry(error: Exception) -> bool:
         from google import genai
         if isinstance(error, genai.errors.APIError):
             code = error.code
@@ -32,7 +32,10 @@ class GeminiClient[T](Client[T]):
     @classmethod
     def _format_message(cls, message: Message) -> dict:
         """Format a single message into Interactions API format."""
-        return {"type": cls.ROLES[message.role], "content": [{"type": "text", "text": message.content}]}
+        content = [{"type": "text", "text": message.text}] if message.text else []
+        for image in message.images or []:
+            content.append({"type": "image", "data": base64.b64encode(image).decode(), "mime_type": cls._sniff_mime(image)})
+        return {"type": cls.ROLES[message.role], "content": content}
 
     async def _request(self, formatted_messages: list[dict], system: str | None, model_args: dict) -> Any:
         """Send a request to the Interactions API."""
@@ -41,8 +44,8 @@ class GeminiClient[T](Client[T]):
             kwargs["system_instruction"] = system
         return await self._async_client.interactions.create(**kwargs)
 
-    @classmethod
-    def _extract_output(cls, response: Any) -> T:
+    @staticmethod
+    def _extract_output(response: Any) -> T:
         """Extract the text output from an Interactions API response."""
         return response.output_text
 
@@ -62,14 +65,12 @@ class WebClient(GeminiClient[str]):
 
 
 class ImageClient(GeminiClient[bytes]):
-    async def _request(self, formatted_messages: list[dict], system: str | None, model_args: dict) -> Any:
-        """Send a one-shot image request to the Interactions API using the latest prompt."""
-        kwargs = {"model": self.model, "input": formatted_messages[-1]["content"][0]["text"], **model_args}
-        if system:
-            kwargs["system_instruction"] = system
-        return await self._async_client.interactions.create(**kwargs)
-
     @classmethod
-    def _extract_output(cls, response: Any) -> bytes:
+    def _inject_args(cls, model_args: dict) -> dict:
+        """Force image output instead of text."""
+        return {"response_modalities": ["image"], **super()._inject_args(model_args)}
+
+    @staticmethod
+    def _extract_output(response: Any) -> bytes:
         """Extract the generated image bytes from the response."""
         return base64.b64decode(response.output_image.data)

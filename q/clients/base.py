@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from enum import Enum
 from typing import Any, ClassVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class Role(str, Enum):
@@ -14,20 +14,22 @@ class Role(str, Enum):
 
 
 class Message(BaseModel):
+    model_config = ConfigDict(ser_json_bytes="base64", val_json_bytes="base64")
     role: Role
-    content: str
+    text: str
+    images: list[bytes] | None = None
 
 
 class Client[T](ABC):
     """Stateful base client for LLM providers."""
 
+    # role name mapping
+    ROLES: ClassVar[dict[Role, str]]
+
     # retry configuration
     MAX_RETRIES = 5
     BACKOFF_FACTOR = 2.0
     MAX_JITTER = 0.1
-
-    # role name mapping
-    ROLES: ClassVar[dict[Role, str]]
 
     def __init__(self, api_key: str, model: str, messages: list[Message] | None = None, system: str | None = None, **model_args):
         self.api_key = api_key
@@ -37,24 +39,30 @@ class Client[T](ABC):
         self.system = system
         self._async_client = self._create_async_client(api_key)
 
-    async def generate(self, prompt: str, system: str | None = None) -> T:
+    async def generate(self, prompt: str, system: str | None = None, images: list[bytes] | None = None) -> T:
         """Generate a response and update conversation state and system prompt if provided. Use `""` to clear the system prompt."""
         if system is not None:
             self.system = system or None
-        self.messages.append(Message(role=Role.USER, content=prompt))
+        self.messages.append(Message(role=Role.USER, text=prompt, images=images))
         output = await self._generate(self.messages, self.system)
         if isinstance(output, str):
-            self.messages.append(Message(role=Role.ASSISTANT, content=output))
+            self.messages.append(Message(role=Role.ASSISTANT, text=output))
+        elif isinstance(output, bytes):
+            self.messages.append(Message(role=Role.ASSISTANT, text="", images=[output]))
+        elif isinstance(output, list) and all(isinstance(item, bytes) for item in output):
+            self.messages.append(Message(role=Role.ASSISTANT, text="", images=output))
+        else:
+            raise TypeError(f"unexpected output type: {type(output).__name__}")
         return output
 
-    async def batch_generate(self, prompt_list: list[str], system: str | None = None, n_threads: int = 8) -> list[T]:
+    async def batch_generate(self, prompt_list: list[str], system: str | None = None, images: list[bytes] | None = None, n_threads: int = 8) -> list[T]:
         """Concurrently generate a response to each input with the current history; *does not update state*."""
         system = system if system is not None else self.system
         semaphore = asyncio.Semaphore(n_threads)
 
         async def process(prompt: str) -> T:
             async with semaphore:
-                return await self._generate([*self.messages, Message(role=Role.USER, content=prompt)], system)
+                return await self._generate([*self.messages, Message(role=Role.USER, text=prompt, images=images)], system)
 
         return await asyncio.gather(*(process(prompt) for prompt in prompt_list))
 
@@ -92,19 +100,32 @@ class Client[T](ABC):
         jitter = random.uniform(0, self.MAX_JITTER * base_delay)
         return base_delay + jitter
 
+    @staticmethod
+    def _sniff_mime(data: bytes) -> str:
+        """Detect an image's MIME type from its magic bytes."""
+        if data.startswith(b"\x89PNG"):
+            return "image/png"
+        if data.startswith(b"\xff\xd8"):
+            return "image/jpeg"
+        if data.startswith(b"GIF8"):
+            return "image/gif"
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            return "image/webp"
+        raise ValueError("unrecognized image format")
+
     @classmethod
     def _inject_args(cls, model_args: dict) -> dict:
         """Adjust the model args before a request; never mutates input."""
         return model_args
 
-    @classmethod
+    @staticmethod
     @abstractmethod
-    def _create_async_client(cls, api_key: str) -> Any:
+    def _create_async_client(api_key: str) -> Any:
         """Import the provider SDK and create its async client instance."""
 
-    @classmethod
+    @staticmethod
     @abstractmethod
-    def _should_retry(cls, error: Exception) -> bool:
+    def _should_retry(error: Exception) -> bool:
         """Determine whether an error should trigger a retry."""
 
     @classmethod
@@ -116,7 +137,7 @@ class Client[T](ABC):
     async def _request(self, formatted_messages: list[dict], system: str | None, model_args: dict) -> Any:
         """Send the formatted messages, system prompt, and model args to the provider and return the raw response."""
 
-    @classmethod
+    @staticmethod
     @abstractmethod
-    def _extract_output(cls, response: Any) -> T:
+    def _extract_output(response: Any) -> T:
         """Extract the output value from a provider response."""
