@@ -33,7 +33,7 @@ class GeminiClient[T](Client[T]):
     def _format_message(cls, message: Message) -> dict:
         """Format a single message into Interactions API format."""
         content = [{"type": "text", "text": message.text}] if message.text else []
-        for image in message.images or []:
+        for image in message.images:
             content.append({"type": "image", "data": base64.b64encode(image).decode(), "mime_type": cls._sniff_mime(image)})
         return {"type": cls.ROLES[message.role], "content": content}
 

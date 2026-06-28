@@ -28,11 +28,17 @@ class OpenAIClient[T](Client[T]):
     @classmethod
     def _format_message(cls, message: Message) -> dict:
         """Format a single message into Responses API format."""
-        content = [{"type": "input_text", "text": message.text}] if message.text else []
-        for image in message.images or []:
+        role, text = message.role, message.text
+        # OpenAI rejects images in assistant turns; resend a generated image as user input with a note
+        if role == Role.ASSISTANT and message.images:
+            role = Role.USER
+            text = "This is an image you generated earlier in this conversation."
+        text_type = "output_text" if role == Role.ASSISTANT else "input_text"
+        content = [{"type": text_type, "text": text}] if text else []
+        for image in message.images:
             data_url = f"data:{cls._sniff_mime(image)};base64,{base64.b64encode(image).decode()}"
             content.append({"type": "input_image", "detail": "auto", "image_url": data_url})
-        return {"role": cls.ROLES[message.role], "content": content}
+        return {"role": cls.ROLES[role], "content": content}
 
     async def _request(self, formatted_messages: list[dict], system: str | None, model_args: dict) -> Any:
         """Send a request to the Responses API."""

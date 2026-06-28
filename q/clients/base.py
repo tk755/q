@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from enum import Enum
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Role(str, Enum):
@@ -17,7 +17,7 @@ class Message(BaseModel):
     model_config = ConfigDict(ser_json_bytes="base64", val_json_bytes="base64")
     role: Role
     text: str
-    images: list[bytes] | None = None
+    images: list[bytes] = Field(default_factory=list)
 
 
 class Client[T](ABC):
@@ -43,7 +43,7 @@ class Client[T](ABC):
         """Generate a response and update conversation state and system prompt if provided. Use `""` to clear the system prompt."""
         if system is not None:
             self.system = system or None
-        self.messages.append(Message(role=Role.USER, text=prompt, images=images))
+        self.messages.append(Message(role=Role.USER, text=prompt, images=images or []))
         output = await self._generate(self.messages, self.system)
         if isinstance(output, str):
             self.messages.append(Message(role=Role.ASSISTANT, text=output))
@@ -62,7 +62,7 @@ class Client[T](ABC):
 
         async def process(prompt: str) -> T:
             async with semaphore:
-                return await self._generate([*self.messages, Message(role=Role.USER, text=prompt, images=images)], system)
+                return await self._generate([*self.messages, Message(role=Role.USER, text=prompt, images=images or [])], system)
 
         return await asyncio.gather(*(process(prompt) for prompt in prompt_list))
 

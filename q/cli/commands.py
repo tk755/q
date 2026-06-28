@@ -102,15 +102,18 @@ class LLMCommand(Command):
         if UndoOption in self.opts:
             client.drop_exchanges(self.opts[UndoOption])
 
-        # build prompt
-        prompt = await self.build_prompt()
+        # build prompt and image list
+        file_text, images = "", None
+        if FileOption in self.opts:
+            file_text, images = FileOption.resolve(self.opts[FileOption])
+        prompt = await self.build_prompt(file_text)
 
         # pre-prompt debug output
         if VerboseOption in self.opts:
-            VerboseOption.pre_prompt_debug(provider, client, self.system, prompt)
+            VerboseOption.pre_prompt_debug(provider, client, self.system, prompt, images)
 
-        # send prompt to LLM and wait for response
-        response = await client.generate(prompt, self.system)
+        # send request to LLM and wait for response
+        response = await client.generate(prompt, self.system, images)
 
         # post-prompt debug output
         if VerboseOption in self.opts:
@@ -122,14 +125,9 @@ class LLMCommand(Command):
         # save session
         StateManager.save_session(self.char, client.messages)
 
-    async def build_prompt(self) -> str:
+    async def build_prompt(self, file_text: str) -> str:
         """Build the user prompt string."""
-        components = []
-        if FileOption in self.opts:
-            components.append(FileOption.get_content(self.opts[FileOption]))
-        if self.value:
-            components.append(self.value)
-        return "\n\n".join(components)
+        return "\n\n".join(filter(None, [file_text, self.value]))
 
     def process_response(self, response: str) -> None:
         """Format response and route output."""
@@ -252,10 +250,10 @@ class ShellCommand(LLMCommand):
             return f"{shell} on {sys_name}"
         return sys_name
 
-    async def build_prompt(self) -> str:
+    async def build_prompt(self, file_text: str) -> str:
         """Build prompt to fix last shell command if no prompt is provided."""
         if self.value:
-            return await super().build_prompt()
+            return await super().build_prompt(file_text)
 
         # get last shell command
         cmd = os.environ.get("Q_CMD", None)
@@ -312,14 +310,7 @@ class HelpCommand(LLMCommand):
     def system(self) -> str:
         cli_dir = Path(__file__).parent
         source_code = "\n\n".join((cli_dir / name).read_text() for name in Path(cli_dir).glob("*.py"))
-        return (
-            "You are `q`, and this is your source code."
-            f"\n\n{source_code}\n\n"
-            "Use the above source code to answer questions about CLI usage. "
-            "Focus on CLI usage, not implementation details. "
-            "Be extremely concise. Answer the question directly without providing additional context. "
-            "Always surround code snippets, commands, flags, and paths with backticks."
-        )
+        return f"You are `q`, and this is your source code.\n\n{source_code}\n\nUse the above source code to answer questions about CLI usage. Focus on CLI usage, not implementation details. Be extremely concise. Answer the question directly without providing additional context. Always surround code snippets, commands, flags, and paths with backticks."
 
     async def execute(self) -> None:
         if self.value:
@@ -392,14 +383,15 @@ class ImageCommand(LLMCommand):
     value_required = True
     tier = Tier.MED
     client_name = "ImageClient"
-    system = "Generate an image of the following description."
+    system = "Generate an image."
 
     def process_response(self, response: bytes) -> None:
         """Save image to disk."""
         text = self.value.translate(str.maketrans("", "", string.punctuation)).replace(" ", "_")
-        path = self.opts.get(OutputOption) or f"q_{text}"
-        path = path if path.lower().endswith(".png") else f"{path}.png"
-        Path(path).write_bytes(response)
+        path = Path(self.opts.get(OutputOption) or f"q_{text}")
+        if not path.suffix:
+            path = path.with_suffix(f".{Client._sniff_mime(response).split('/')[-1]}")
+        path.write_bytes(response)
         qprint(f"Image saved to {path}", color="yellow", file=sys.stderr)
 
 
@@ -413,20 +405,24 @@ class FileOption(Flag):
     value_required = True
 
     @classmethod
-    def get_content(cls, paths: list[str]) -> str:
-        """Read a list of files and wrap their contents in <file> tags."""
-
-        contents = []
+    def resolve(cls, paths: list[str]) -> tuple[str, list[bytes]]:
+        """Resolve a list of files into text content and bytes."""
+        contents, images = [], []
         for path in paths:
             try:
-                text = Path(path).expanduser().read_text(encoding="utf-8")
-                contents.append(f'<file path="{path}">\n{text.rstrip("\n")}\n</file>')
-            except UnicodeDecodeError:
-                raise InputError(f"cannot read '{path}': not valid UTF-8 text") from None
+                data = Path(path).expanduser().read_bytes()
             except OSError as e:
                 raise InputError(f"cannot read '{path}': {e.strerror.lower()}") from None
-
-        return "\n\n".join(contents)
+            with contextlib.suppress(ValueError):
+                Client._sniff_mime(data)
+                images.append(data)
+                continue
+            with contextlib.suppress(UnicodeDecodeError):
+                text = data.decode("utf-8")
+                contents.append(f'<file path="{path}">\n{text.rstrip("\n")}\n</file>')
+                continue
+            raise InputError(f"cannot read '{path}': not valid UTF-8 text or image file")
+        return "\n\n".join(contents), images
 
 
 class KeyOption(Flag):
@@ -499,7 +495,7 @@ class VerboseOption(Flag):
     SECONDARY_COLOR = "green"
 
     @classmethod
-    def pre_prompt_debug(cls, provider: str, client: Client, system: str | None, prompt: str) -> None:
+    def pre_prompt_debug(cls, provider: str, client: Client, system: str | None, prompt: str, images: list[bytes] | None = None) -> None:
         qprint("MODEL PARAMETERS:", color=cls.PRIMARY_COLOR, file=sys.stderr)
         qprint("model:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=" ")
         qprint(f"{provider}:{client.model}", file=sys.stderr)
@@ -514,10 +510,16 @@ class VerboseOption(Flag):
         for message in client.messages:
             end = "\n" if "\n" in message.text else " "
             qprint(f"{message.role.value}:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=end)
-            qprint(message.text, file=sys.stderr)
+            if message.images:
+                qprint(f"{message.text} [{len(message.images)} image{'s' if len(message.images) > 1 else ''}]".strip(), file=sys.stderr)
+            else:
+                qprint(message.text, file=sys.stderr)
         end = "\n" if "\n" in prompt else " "
         qprint(f"{Role.USER.value}:", color=cls.SECONDARY_COLOR, file=sys.stderr, end=end)
-        qprint(prompt, file=sys.stderr)
+        if images:
+            qprint(f"{prompt} [{len(images)} image{'s' if len(images) > 1 else ''}]".strip(), file=sys.stderr)
+        else:
+            qprint(prompt, file=sys.stderr)
 
     @classmethod
     def post_prompt_debug(cls) -> None:

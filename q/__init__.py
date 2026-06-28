@@ -3,7 +3,7 @@ from .clients.base import Client, Message, Role
 
 __all__ = ["Client", "Message", "Role", "load_client_class"]
 
-__version__ = "2.0.0.dev10"
+__version__ = "2.0.0.dev11"
 
 # expose providers as top-level modules
 import sys as _sys  # noqa: I001

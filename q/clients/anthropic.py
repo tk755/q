@@ -35,7 +35,7 @@ class AnthropicClient[T](Client[T]):
     def _format_message(cls, message: Message) -> dict:
         """Format a single message into Messages API format."""
         content = []
-        for image in message.images or []:
+        for image in message.images:
             source = {"type": "base64", "media_type": cls._sniff_mime(image), "data": base64.b64encode(image).decode()}
             content.append({"type": "image", "source": source})
         if message.text:
