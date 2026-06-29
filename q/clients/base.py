@@ -26,6 +26,9 @@ class Client[T](ABC):
     # role name mapping
     ROLES: ClassVar[dict[Role, str]]
 
+    # fix for providers that reject images in assistant turns
+    SPOOF_ASSISTANT_IMAGES: ClassVar[bool] = False
+
     # retry configuration
     MAX_RETRIES = 5
     BACKOFF_FACTOR = 2.0
@@ -80,9 +83,24 @@ class Client[T](ABC):
 
     async def _generate(self, messages: list[Message], system: str | None) -> T:
         """Format messages, inject model args, send the request with retries, and extract the output."""
+        if self.SPOOF_ASSISTANT_IMAGES:
+            messages = self._spoof_assistant_images(messages)
         formatted_messages = [self._format_message(message) for message in messages]
         response = await self._retry(self._request, formatted_messages, system, self._inject_args(self.model_args))
         return self._extract_output(response)
+
+    @staticmethod
+    def _spoof_assistant_images(messages: list[Message]) -> list[Message]:
+        """Spoof assistant images as user images for providers that reject images in assistant turns."""
+        result = []
+        for message in messages:
+            if message.role == Role.ASSISTANT and message.images:
+                result.append(Message(role=Role.ASSISTANT, text=message.text or "Image generated."))
+                result.append(Message(role=Role.USER, text="This is the image you generated.", images=message.images))
+                result.append(Message(role=Role.ASSISTANT, text="Yes, it is."))
+            else:
+                result.append(message)
+        return result
 
     async def _retry(self, func: Callable[..., Awaitable[T]], *args: Any) -> T:
         """Call an async func with exponential backoff on transient errors."""
@@ -131,13 +149,13 @@ class Client[T](ABC):
     @classmethod
     @abstractmethod
     def _format_message(cls, message: Message) -> dict:
-        """Format a single message into the provider's request format."""
+        """Format a single message into the provider's API format."""
 
     @abstractmethod
     async def _request(self, formatted_messages: list[dict], system: str | None, model_args: dict) -> Any:
-        """Send the formatted messages, system prompt, and model args to the provider and return the raw response."""
+        """Send the formatted messages, system prompt, and model args to the provider's API and return the raw response."""
 
     @staticmethod
     @abstractmethod
     def _extract_output(response: Any) -> T:
-        """Extract the output value from a provider response."""
+        """Extract the output value from a provider's API response."""

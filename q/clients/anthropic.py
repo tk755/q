@@ -10,7 +10,8 @@ class AnthropicClient[T](Client[T]):
     """Base client for the Anthropic Messages API."""
 
     ROLES: ClassVar[dict[Role, str]] = {Role.USER: "user", Role.ASSISTANT: "assistant"}
-    DEFAULT_MAX_TOKENS = 1024
+    SPOOF_ASSISTANT_IMAGES = True
+    DEFAULT_MAX_TOKENS = 2048
 
     @staticmethod
     def _create_async_client(api_key: str) -> Any:
