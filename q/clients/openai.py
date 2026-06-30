@@ -58,8 +58,8 @@ class WebClient(OpenAIClient[str]):
         """Add the web-search tool, merging with any existing tools."""
         model_args = super()._inject_args(model_args)
         tools = model_args.get("tools", [])
-        if not any(tool.get("type") == "web_search_preview" for tool in tools):
-            tools = [*tools, {"type": "web_search_preview", "search_context_size": "low"}]
+        if not any(tool.get("type") == "web_search" for tool in tools):
+            tools = [*tools, {"type": "web_search", "search_context_size": "low"}]
         return {**model_args, "tools": tools}
 
 

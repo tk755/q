@@ -8,21 +8,25 @@ class Tier(Enum):
     MED = "med"
     HIGH = "high"
 
+MAX_TOKENS = 16384
 
 MODEL_CONFIGS = {
     "openai": {
         "TextClient": {
             Tier.LOW: {
-                "model": "gpt-5.4-nano",
-                "reasoning": {"effort": "low"},
+                "model": "gpt-5.4-mini",
+                "reasoning": {"effort": "none"},
+                "max_output_tokens": MAX_TOKENS,
             },
             Tier.MED: {
-                "model": "gpt-5.4-mini",
-                "reasoning": {"effort": "medium"},
+                "model": "gpt-5.4",
+                "reasoning": {"effort": "none"},
+                "max_output_tokens": MAX_TOKENS,
             },
             Tier.HIGH: {
                 "model": "gpt-5.4",
                 "reasoning": {"effort": "high"},
+                "max_output_tokens": MAX_TOKENS,
             },
         },
         "ImageClient": {
@@ -44,17 +48,19 @@ MODEL_CONFIGS = {
         "TextClient": {
             Tier.LOW: {
                 "model": "claude-haiku-4-5",
-                "max_tokens": 2000,
+                "max_tokens": MAX_TOKENS,
             },
             Tier.MED: {
-                "model": "claude-sonnet-4-6",
-                "max_tokens": 4000,
+                "model": "claude-sonnet-5",
+                "thinking": {"type": "adaptive"},
+                "output_config": {"effort": "medium"},
+                "max_tokens": MAX_TOKENS,
             },
             Tier.HIGH: {
                 "model": "claude-opus-4-8",
-                "max_tokens": 16000,
                 "thinking": {"type": "adaptive"},
                 "output_config": {"effort": "high"},
+                "max_tokens": MAX_TOKENS,
             },
         },
     },
@@ -62,14 +68,15 @@ MODEL_CONFIGS = {
         "TextClient": {
             Tier.LOW: {
                 "model": "gemini-3.1-flash-lite",
+                "generation_config": {"thinking_level": "low", "max_output_tokens": MAX_TOKENS},
             },
             Tier.MED: {
                 "model": "gemini-3.5-flash",
-                "generation_config": {"thinking_level": "low"},
+                "generation_config": {"thinking_level": "low", "max_output_tokens": MAX_TOKENS},
             },
             Tier.HIGH: {
-                "model": "gemini-3.5-flash",
-                "generation_config": {"thinking_level": "high"},
+                "model": "gemini-3.1-pro-preview",
+                "generation_config": {"thinking_level": "low", "max_output_tokens": MAX_TOKENS},
             },
         },
         "ImageClient": {

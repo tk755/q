@@ -11,7 +11,7 @@ class AnthropicClient[T](Client[T]):
 
     ROLES: ClassVar[dict[Role, str]] = {Role.USER: "user", Role.ASSISTANT: "assistant"}
     SPOOF_ASSISTANT_IMAGES = True
-    DEFAULT_MAX_TOKENS = 2048
+    DEFAULT_MAX_TOKENS = 16384
 
     @staticmethod
     def _create_async_client(api_key: str) -> Any:

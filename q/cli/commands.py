@@ -188,7 +188,7 @@ class TextCommand(LLMCommand):
     desc = "generate text"
     value_type = ValueType.TEXT
     value_required = True
-    tier = Tier.MED
+    tier = Tier.LOW
     system = ""
 
 
@@ -197,7 +197,7 @@ class ExplainCommand(LLMCommand):
     desc = "explain code/concept"
     value_type = ValueType.TEXT
     value_required = True
-    tier = Tier.HIGH
+    tier = Tier.LOW
     system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
 
 
@@ -216,7 +216,7 @@ class CodeCommand(LLMCommand):
     desc = "generate code"
     value_type = ValueType.TEXT
     value_required = True
-    tier = Tier.HIGH
+    tier = Tier.MED
     clip = True
 
     @property
