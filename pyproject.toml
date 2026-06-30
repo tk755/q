@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "q-bot"
 dynamic = ["version"]
-description = "An expressive command-line utility and provider-agnostic library for LLMs."
+description = "An expressive, composable, provider-agnostic command-line interface for LLMs."
 requires-python = ">=3.12"
 dependencies = [
     "anthropic==0.111.0",

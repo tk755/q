@@ -477,7 +477,7 @@ class ModelOption(Flag):
 
 class NewOption(Flag):
     char = "n"
-    desc = "new session"
+    desc = "new conversation"
 
 
 class OutputOption(Flag):

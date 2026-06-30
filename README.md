@@ -1,8 +1,8 @@
 # Overview
 
-`q` is an expressive [command-line utility](#command-line-usage) and provider-agnostic [library](#library-usage) for LLMs.
+`q` is an expressive, composable, provider-agnostic command-line interface for LLMs.
 
-> I built `q` as a personal utility script before the emergence of agentic coding tools like Claude Code. It has since been optimized for its particular niche: quick terminal interaction, shell script integration, and multi-model experimentation.
+> I built `q` as a personal utility script before agentic coding tools like Claude Code released. It still excels at quick terminal prompts and shell script integration.
 
 # Installation
 
@@ -14,34 +14,34 @@ pipx install q-bot
 
 Requires Python 3.12+.
 
-# Command-Line Usage
+# Syntax
 
-`q` follows the Unix philosophy of composable, single-purpose utilities.
+`q` follows the Unix philosophy of composable, single-purpose utilities. Every character from `a` to `z` maps to a single command or option: a **command** performs a specific LLM task, an **option** modifies it. One command runs per invocation, alongside any number of options.
 
-Every character from `a` to `z` maps to a command or option. A **command** performs a specific LLM task, while an **option** modifies a command's behavior. Together, they can express a wide variety of LLM operations precisely and concisely.
+Flags are single characters and can be bundled, so `-sx` is `-s -x`. A command's prompt follows it directly and can be unquoted. `--` stops flag parsing so a prompt can contain leading dashes. With no command, a prompt reuses the last command in the session.
 
-Run `q -h` to see all commands and options.
+Run `q -h` for the full list of commands and options.
 
-## Examples
+# Commands
 
-### Shell Command Generation and Execution
+## Shell (`-s`)
 
-Use `-s` to generate shell commands and copy them to the clipboard. `q` automatically detects the operating system and shell to generate compatible commands.
+Generate a single shell command for the detected OS and shell. The model favors minimal, portable commands and is steered away from destructive ones (e.g. `rm -rf`, `dd`, `mkfs`, etc.). Without `-x`, the command is printed and copied to the clipboard.
 
 ```bash
-$ q -s auto hide the dock # on macOS
+$ q -s auto hide the dock          # on macOS
 defaults write com.apple.dock autohide -bool true; killall Dock
 ```
 
-Use `-x` to automatically execute the generated command.
+`-x` automatically runs the generated command.
 
 ```bash
-$ q -sx count number of commits
+$ q -sx count commits on this branch
 > git rev-list --count HEAD
 95
 ```
 
-With no prompt, `-s` re-runs the last shell command, reads the error, and fixes it.
+With no prompt, `-s` reads your last shell command, re-runs it to capture the error, and fixes it.
 
 ```bash
 $ git push
@@ -51,92 +51,128 @@ $ q -sx
 Branch 'dev' set up to track remote branch 'dev' from 'origin'.
 ```
 
-> [!IMPORTANT]
-> This requires a small shell hook to expose your previous command to `q`. Run `q -s` for more instructions.
-
-### Code Generation
-
-Use `-c` to generate idiomatic code snippets and copy them to the clipboard. The default language is set in the [config](#configuration).
+<!-- TODO: Combine `-a` with `-s` and `-x` to continuously generate commands until the prompt is satisfied.
 
 ```bash
-$ q -c square all keys in a dict
-squared_keys = {k**2: v for k, v in d.items()}
+$ q -sxa get cuda version
+> nvcc --version
+bash: nvcc: command not found
+> cat /usr/local/cuda/version.txt
+cat: /usr/local/cuda/version.txt: No such file or directory
+> nvidia-smi | grep "CUDA Version"
+| NVIDIA-SMI 560.35.02    Driver Version: 560.94    CUDA Version: 12.6 |
+``` -->
+
+> [!IMPORTANT]
+> Reading the last command requires a shell hook. Run `q -s` for instructions.
+
+## Image (`-i`)
+
+Generate an image.
+
+```bash
+$ q -i a cat floating in space -o space_cat.png
+Image saved to space_cat.png
 ```
 
-Use `-l` to specify the language, and `-o` to write the output to a file.
+`-f` adds an image to edit or use as context. Keep prompting in the same session to refine previous images.
+
+```bash
+$ q -i remove the people in the background -f image.png
+Image saved to q_remove_the_people_in_the_background.png
+$ q -i crop above the waist -o headshot.png
+Image saved to headshot.png
+```
+
+Image generation, editing, and refinement are all one command over a stateful image conversation. Each user-specified and assistant-generated image is fed back as context so later turns can refer to them.
+
+> [!NOTE]
+> Not all providers support images in assistant turns. In these cases, `q` spoofs the images as user turns, enabling multi-turn image editing for any provider that supports image generation.
+
+> [!NOTE]
+> Image generation is not supported by `anthropic`.
+
+## Code (`-c`)
+
+Generate an idiomatic code snippet and copy it to the clipboard.
+
+```bash
+$ q -c square every value in a dict
+{k: v**2 for k, v in d.items()}
+```
+
+The default language is set in your [config](#configuration); `-l` overrides it.
 
 ```bash
 $ q -c binary search -l rust -o search.rs
 Response saved to search.rs
 ```
 
-### Image <!--Editing and -->Generation
+## Web (`-w`)
 
-Use `-i` to generate an image.
-
-```bash
-$ q -i a cat in space
-Image saved to q_a_cat_in_space.png
-```
-
-### Web Search
-
-Use `-w` to search the web for real-time information with source attribution.
+Search the web for real-time information with source attribution.
 
 ```bash
 $ q -w nba champions
 The New York Knicks are the 2026 NBA champions. (nba.com)
 ```
 
-### Explanation
+> [!NOTE]
+> Web search is not supported by `anthropic`.
 
-Use `-e` to get an explanation of any command, snippet, or concept.
+## Explain (`-e`)
+
+Explain a command, snippet, or concept in a dense paragraph for an experienced reader.
 
 ```bash
 $ q -e 'find . -type d -name .git -exec dirname {} \; | sort'
-This walks the current directory tree, finds every .git directory, strips the trailing /.git to yield the repository root path, and then sorts the results lexicographically.
+This walks the current directory tree, finds every .git directory, strips the trailing /.git to yield each repository root, and sorts the results lexicographically.
 ```
 
-### Text Generation
+## Text (`-t`)
 
-Use `-t` to generate text without a system prompt.
+Generate raw text with no system prompt. Useful as a scripting primitive or a base for composition.
 
 ```bash
-$ q -t write a sentence with only words starting with q
+$ q -t write a sentence using only words that start with q
 Quick quails quietly quench quivering quagmires.
 ```
 
-### Meta Help
+## Help (`-h`)
 
-Use `-h` to ask `q` a question about itself. This is a great way to learn about its capabilities.
+With no prompt, `-h` prints usage information. With a prompt, `q` is able to answer questions about *itself* by using its own source code as context.
 
 ```bash
 $ q -h is -- -k transient or persistent
 -k is transient. It overrides the API key for a single command and is not saved to the .env file.
 ```
 
-> [!IMPORTANT]
-> Each query consumes a large number of input tokens because it sends `q`'s source code as context.
+> [!NOTE]
+> Prompting `-h` sends `q`'s source code as context; such queries consume a large number of input tokens.
 
-<!-- ### Batch Commands
+# Sessions
 
-Use `-b` to run a command on each line of a file.
+Each terminal or script that runs `q` maintains an isolated **session**, which is a multi-turn history that persists across invocations, keyed to the parent shell process. Sessions are deleted automatically when that shell exits.
 
 ```bash
-$ q -sx "install this package: " -b packages.txt
-``` -->
+$ q -c merge two dictionaries x and y
+$ q -t what is the time complexity          # same conversation
+```
 
-## Sessions
+A session does not depend on the capability or provider, so either can be switched mid-conversation.
 
-Each terminal or script that runs `q` maintains an isolated **session** that persists multi-turn conversation history across calls. Sessions are automatically deleted when the parent shell process exits.
+```bash
+$ q -e explain photosynthesis -m anthropic
+$ q -i draw a diagram -m openai             # new capability and provider
+```
 
-Invoking `q` without a command reuses the previous one in the session. Use `-n` to clear the session history for a new conversation or one-shot prompt. Use `-z` to undo previous exchanges.
+`-z` undoes the last `n` exchanges (default 1), and `-n` clears the history for a new conversation or a one-shot prompt.
 
-## Model Selection
+# Model Selection
 
-`q` defines three capability **tiers** per provider: `low`, `med`, and `high`. Each maps to a comparable model and parameters on every provider, with lower tiers faster and cheaper, and higher tiers more capable. Tiers abstract away model and parameter selection, making it easy to switch providers or scale capability up and down.
+`q` defines three **tiers** (`low`, `med`, and `high`) for each provider and capability. A tier maps to a comparable model and tuned parameters on every provider, so the same tier is faster and cheaper at `low` and more capable at `high` regardless of which provider serves it.
 
-Each command defines a default tier (viewable with `q -hv`), and the default provider is set in the [config](#configuration). Use `-m` to override the default model selection by tier, provider, or specific model name.
+Each command has a sensible default tier, which `-hv` displays. The default provider is set in your [config](#configuration). `-m` overrides the tier, provider, or specific model name.
 
 ```bash
 $ q -c quicksort -m high                        # override tier, use default provider
@@ -145,120 +181,74 @@ $ q -c quicksort -m anthropic:high              # override both provider and tie
 $ q -c quicksort -m anthropic:claude-opus-4-8   # override provider and specify model
 ```
 
-Use `-v` to inspect the resolved provider, model, and parameters.
+`-v` prints the resolved model, parameters, system prompt, and message history to stderr before the response.
 
-## Configuration
+# Input and Output Files
 
-`q` maintains persistent state and configuration files in `~/.q/`:
-- **`~/.q/.env`** - One API key per provider, prompted the first time each provider is called.
-- **`~/.q/config.json`** - Default `provider` (`openai`) and `code_lang` (`python`), created automatically on first run.
-- **`~/.q/sessions/`** - One `<pid>.json` file per active session, deleted automatically when stale.
+`-f` adds one or more files to any command. Text files are inserted as context; image files are sent as vision input. Both can be mixed in a single call.
 
-Use `-k` to override the default API key for a single invocation, useful for switching accounts or testing a key without persisting it.
+```bash
+$ q -e what does this module configure -f config.py
+$ q -t compare these -f chart.png report.txt
+```
+
+`-o` writes the response or generated image to a path instead of stdout or the clipboard.
+
+# Configuration
+
+`q` stores state and configuration under `~/.q/`:
+- **`.env`**: one API key per provider, prompted and saved the first time each provider is used.
+- **`config.json`**: default `provider` (`openai`) and code language (`python`), created on first run.
+- **`sessions/`**: one file per active session, reaped automatically when its shell exits.
+
+`-k` overrides a provider's key for a single invocation without saving it to `.env`.
 
 # Library Usage
 
-The `q` library is built on two principles:
-- **Clients are single-capability.** Each client does one thing (e.g. text generation, image generation, web search, etc.) and has a static return type. No mode switching or tool selection logic is necessary.
-- **Agents are provider- and capability-agnostic.** Every agent accepts any client and inherits its return type, regardless of what the underlying client does or which provider it calls.
-
-This leads to a simple, explicit architecture that requires little boilerplate to use or extend.
+`q` implements a small multi-provider library, built on two principles:
+- **Single-capability clients:** clients have a static return type `T` and do not require mode switching or tool-selection.
+- **Single interface and state model:** clients expose a uniform interface and state model so they can be swapped dynamically mid-conversation.
 
 ## Clients
 
-A **client** is a wrapper around a provider's API for one capability.
+A **client** is a wrapper around a provider's API for one capability. It stores conversation history as a list of portable `Message` objects and exposes two primary functions:
+- `generate`: sends a prompt and returns the response, appending both to history.
+- `batch_generate`: sends multiple prompts concurrently against the current history, leaving it unchanged.
 
-Clients extend `Client[T]` and are instantiated with an API key, model name, and optionally provider- and model-specific argument overrides. All clients expose a `generate` method which invokes the LLM, retries transient failures, and returns a value of type `T`.
+The following built-in clients are provided for each provider:
+| Client        | T       | Description                  | `openai` | `anthropic` | `google` |
+| ------------- | ------- | ---------------------------- | :------: | :---------: | :------: |
+| `TextClient`  | `str`   | text generation              | ✓        | ✓           | ✓        |
+| `WebClient`   | `str`   | web-grounded text generation | ✓        | ✗           | ✓        |
+| `ImageClient` | `bytes` | image generation             | ✓        | ✗           | ✓        |
 
-```python
-Client[T](api_key: str, model: str, **model_args)
-async Client[T].generate(messages: list[Message]) -> T
-```
+## Dynamic Loading
 
-The following built-in clients are provided for each provider and capability:
-
-| Client        | T       | Description                  | `openai` | `anthropic` |
-| ------------- | ------- | ---------------------------- | :------: | :---------: |
-| `TextClient`  | `str`   | text generation              | ✓        | ✓           |
-| `WebClient`   | `str`   | web-grounded text generation | ✓        | ✗           |
-| `ImageClient` | `bytes` | image generation             | ✓        | ✗           |
-
-### Dynamic Loading
-
-Client classes are typically imported from their provider module, but can also be dynamically loaded at runtime by specifying a provider and client name using the `load_client_class` utility.
+Client classes are typically imported from their provider module (e.g. `q.openai`, `q.anthropic`, etc.), but they can also be loaded at runtime by provider and client name using the `load_client_class` utility.
 
 ```python
-from q.providers import load_client_class
+from q import load_client_class
 
-client_class = load_client_class('openai', 'ImageClient')
+client_class = load_client_class("openai", "ImageClient")
 client = client_class(api_key, model, **model_args)
 ```
 
-This is useful for building multi-provider systems or provider-agnostic tooling.
+This is useful for building provider-agnostic tooling with minimal boilerplate, like the `q` CLI itself.
 
-## Agents
-
-An **agent** is a wrapper around a client that manages messages and provides a consistent interface for prompting.
-
-`ChatAgent[T]` is a conversational agent with persistent message history.
+## Example
 
 ```python
-ChatAgent[T](client: Client[T], system: str | None = None, messages: list[Message] | None = None)
-async ChatAgent[T].prompt(text: str) -> T
-ChatAgent[T].drop_exchanges(n: int = 1) -> None
-```
+from q import load_client_class
 
-`BatchAgent[T]` processes multiple inputs in parallel without message history.
-
-```python
-BatchAgent[T](client: Client[T], system: str | None = None)
-async BatchAgent[T].batch_prompt(text_list: list[str], n_threads: int = 8) -> list[T]
-```
-
-## Examples
-
-### Basic Usage
-
-```python
-from pathlib import Path
-from q.providers.openai import ImageClient
-from q.agents import ChatAgent
-
-client = ImageClient(api_key, "gpt-image-2", quality="high")
-agent = ChatAgent(client)
-image_bytes = await agent.prompt("a cat in space")
-Path("cat.png").write_bytes(image_bytes)
-```
-
-### Batch Processing
-
-```python
-from q.providers.anthropic import TextClient
-from q.agents import BatchAgent
-
-client = TextClient(api_key, "claude-opus-4-8")
-agent = BatchAgent(client, system="Identify the language of the text.")
-inputs = ["How are you?", "¿Cómo estás?", "Comment ça va?"]
-langs = await agent.batch_prompt(inputs)
-```
-
-### Multi-Agent Orchestration
-
-```python
-from q.providers import load_client_class
-from q.agents import ChatAgent
-
-client1 = load_client_class('openai', 'TextClient')(openai_key, "gpt-5.5")
-client2 = load_client_class('anthropic', 'TextClient')(anthropic_key, "claude-opus-4-8")
-
-system = "You are an AI speaking with another AI. Discuss the future of AI."
-agent1 = ChatAgent(client1, system=system)
-agent2 = ChatAgent(client2, system=system)
-
-text = "What are your thoughts on the future of AI?"
-for _ in range(5):
-    text = await agent1.prompt(text)
-    print("agent1:", text)
-    text = await agent2.prompt(text)
-    print("agent2:", text)
+relay = [
+    ("openai", openai_key, "gpt-5.4-mini"),
+    ("anthropic", anthropic_key, "claude-sonnet-4-6"),
+    ("google", google_key, "gemini-3.5-flash"),
+]
+messages = []
+for provider, key, model in relay * 3:
+    client = load_client_class(provider, "TextClient")(key, model, messages=messages)
+    await client.generate("continue this story with one sentence", "You are a collaborative storyteller.")
+    messages = client.messages
+    print(f"{model}: {messages[-1].text}")
 ```
