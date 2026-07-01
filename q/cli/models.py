@@ -91,10 +91,30 @@ MODEL_CONFIGS = {
             },
         },
     },
+    "xai": {
+        "TextClient": {
+            Tier.LOW: {
+                "model": "grok-4.3",
+                "reasoning": {"effort": "none"},
+                "max_output_tokens": MAX_TOKENS,
+            },
+            Tier.MED: {
+                "model": "grok-4.3",
+                "reasoning": {"effort": "low"},
+                "max_output_tokens": MAX_TOKENS,
+            },
+            Tier.HIGH: {
+                "model": "grok-4.3",
+                "reasoning": {"effort": "medium"},
+                "max_output_tokens": MAX_TOKENS,
+            },
+        },
+    },
 }
 
 MODEL_CONFIGS["openai"]["WebClient"] = MODEL_CONFIGS["openai"]["TextClient"]
 MODEL_CONFIGS["google"]["WebClient"] = MODEL_CONFIGS["google"]["TextClient"]
+MODEL_CONFIGS["xai"]["WebClient"] = MODEL_CONFIGS["xai"]["TextClient"]
 
 
 def lookup(provider: str, client_name: str, tier: Tier) -> tuple[str, dict]:

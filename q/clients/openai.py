@@ -59,7 +59,7 @@ class WebClient(OpenAIClient[str]):
         model_args = super()._inject_args(model_args)
         tools = model_args.get("tools", [])
         if not any(tool.get("type") == "web_search" for tool in tools):
-            tools = [*tools, {"type": "web_search", "search_context_size": "low"}]
+            tools = [*tools, {"type": "web_search"}]
         return {**model_args, "tools": tools}
 
 
