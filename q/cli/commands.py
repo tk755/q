@@ -198,7 +198,7 @@ class ExplainCommand(LLMCommand):
     value_type = ValueType.TEXT
     value_required = True
     tier = Tier.LOW
-    system = "You are a programming assistant. Given a shell command, code snippet, or technical concept, provide a concise and technical explanation. Assume the reader is an experienced developer. Avoid restating the code or command. Avoid explaining obvious syntax. Avoid breaking the answer into bullet points unless necessary. The response should be a single short paragraph optimized for clarity."
+    system = "Give an expert the shortest and maximally information-dense explanation in one paragraph, no filler."
 
 
 class WebCommand(LLMCommand):
@@ -208,7 +208,7 @@ class WebCommand(LLMCommand):
     value_required = True
     tier = Tier.LOW
     client_name = "WebClient"
-    system = "You fetch real-time data from the internet. Always respond with only the data requested. Do not provide additional information in the form of context or background. The response should be less than a single sentence. Always search the internet."
+    system = "Search the web and reply with only the answer, as a bare value such as a name, number, or date, with nothing else: no full sentence, no restatement, no context, no explanation."
 
 
 class CodeCommand(LLMCommand):
@@ -222,7 +222,7 @@ class CodeCommand(LLMCommand):
     @property
     def system(self) -> str:
         code_lang = self.opts.get(LanguageOption) or StateManager.default_code_lang()
-        return f"You are a coding assistant. Given a natural language description, generate a code snippet that accomplishes the requested task. The code should be correct, efficient, concise, and idiomatic. Respond with only the code snippet, without explanations, additional text, or formatting. Use the {code_lang} programming language."
+        return f"Generate the most minimal, idiomatic {code_lang} code that fully solves the task, implementing the function or class it calls for. No over-engineering or unrequested features. Prefer the standard library to reinventing it. Output only the code."
 
 
 class ShellCommand(LLMCommand):
@@ -235,7 +235,7 @@ class ShellCommand(LLMCommand):
 
     @property
     def system(self) -> str:
-        return f"You are a command-line assistant. Given a description, generate the simplest single shell command that accomplishes the task. Favor minimal, commonly available commands with no extra formatting or piping. Avoid commands that could delete, overwrite, or modify important files or system settings (e.g., rm -rf, dd, mkfs, chmod -R, chown, kill -9). Respond with only the command, without explanations, additional text, or formatting. System is running {self._get_system_info()}."
+        return f"Generate the single simplest, most direct idiomatic shell command for the task on {self._get_system_info()}. Output only the command. Never use destructive commands (rm -rf, dd, mkfs, chmod -R, chown, kill -9)."
 
     def _get_system_info(self) -> str:
         shell = os.environ.get("SHELL") or os.environ.get("COMSPEC")
@@ -247,7 +247,7 @@ class ShellCommand(LLMCommand):
                 sys_name = distro.name(pretty=True)
 
         if shell:
-            return f"{shell} on {sys_name}"
+            return f"{sys_name} using {shell}"
         return sys_name
 
     async def build_prompt(self, file_text: str) -> str:
