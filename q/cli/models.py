@@ -113,6 +113,7 @@ MODEL_CONFIGS = {
 }
 
 MODEL_CONFIGS["openai"]["WebClient"] = MODEL_CONFIGS["openai"]["TextClient"]
+MODEL_CONFIGS["anthropic"]["WebClient"] = MODEL_CONFIGS["anthropic"]["TextClient"]
 MODEL_CONFIGS["google"]["WebClient"] = MODEL_CONFIGS["google"]["TextClient"]
 MODEL_CONFIGS["xai"]["WebClient"] = MODEL_CONFIGS["xai"]["TextClient"]
 

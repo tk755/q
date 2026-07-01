@@ -117,9 +117,6 @@ $ q -w nba champions
 The New York Knicks are the 2026 NBA champions. (nba.com)
 ```
 
-> [!NOTE]
-> Web search is not supported by `anthropic`.
-
 ## Explain (`-e`)
 
 Explain a command, snippet, or concept in a dense paragraph for an experienced reader.

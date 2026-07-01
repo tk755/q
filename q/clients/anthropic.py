@@ -3,7 +3,7 @@ from typing import Any, ClassVar
 
 from .base import Client, Message, Role
 
-__all__ = ["TextClient"]
+__all__ = ["TextClient", "WebClient"]
 
 
 class AnthropicClient[T](Client[T]):
@@ -52,8 +52,21 @@ class AnthropicClient[T](Client[T]):
 
     @staticmethod
     def _extract_output(response: Any) -> T:
-        """Extract the text output from a Messages API response."""
-        return "".join(block.text for block in response.content if block.type == "text")
+        """Extract the text output from a Messages API response, after any tool-use blocks."""
+        content = response.content
+        last_tool = max((i for i, block in enumerate(content) if block.type != "text"), default=-1)
+        return "".join(block.text for block in content[last_tool + 1:] if block.type == "text")
 
 
 class TextClient(AnthropicClient[str]): ...
+
+
+class WebClient(AnthropicClient[str]):
+    @classmethod
+    def _inject_args(cls, model_args: dict) -> dict:
+        """Add the web-search tool, merging with any existing tools."""
+        model_args = super()._inject_args(model_args)
+        tools = model_args.get("tools", [])
+        if not any(tool.get("name") == "web_search" for tool in tools):
+            tools = [*tools, {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
+        return {**model_args, "tools": tools}
