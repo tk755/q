@@ -65,6 +65,15 @@ class WebClient(GeminiClient[str]):
 
 
 class ImageClient(GeminiClient[bytes]):
+    @staticmethod
+    def _should_retry(error: Exception) -> bool:
+        from google import genai
+        if GeminiClient._should_retry(error):
+            return True
+        # transient image-generation failures surface as a 400; retry only those
+        return (isinstance(error, genai.errors.APIError) and error.code == 400
+                and "failed to generate" in (error.message or "").lower())
+
     @classmethod
     def _inject_args(cls, model_args: dict) -> dict:
         """Force image output instead of text."""

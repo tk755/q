@@ -26,7 +26,7 @@ MODEL_CONFIGS = {
             Tier.HIGH: {
                 "model": "gpt-5.4",
                 "reasoning": {"effort": "high"},
-                "max_output_tokens": MAX_TOKENS,
+                "max_output_tokens": MAX_TOKENS*2,
             },
         },
         "ImageClient": {
