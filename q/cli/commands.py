@@ -18,9 +18,9 @@ import pyperclip
 from flatten_dict import flatten
 from termcolor import colored
 
-from q import Client, Role, __version__, load_client_class
+from q import Client, Role, __version__, list_providers, load_client_class
 
-from .models import MODEL_CONFIGS, Tier, lookup
+from .models import Tier, lookup
 from .session import StateManager
 from .terminal import InputError, qprint
 
@@ -318,31 +318,51 @@ class HelpCommand(LLMCommand):
         else:
             qprint(self._help_text(VerboseOption in self.opts))
 
-    def _help_text(self, verbose: bool = False) -> str:
-        type_col_len = max(len(flag.value_type.value or "") for flag in FLAG_MAP.values()) + 2
-        desc_col_len = max(len(flag.desc) for flag in FLAG_MAP.values()) if verbose else 0
-        tier_col_len = max(len(flag.tier.value) for flag in FLAG_MAP.values() if hasattr(flag, "tier"))
+    @classmethod
+    def _help_text(cls, verbose: bool = False) -> str:
+        """Return full help text for the CLI."""
+        blocks = [
+            cls._help_text_usage(),
+            cls._help_text_flags(verbose),
+            cls._help_text_providers(verbose)
+        ]
+        return "\n\n".join("\n".join(block) for block in blocks)
+
+    @classmethod
+    def _help_text_usage(cls) -> list[str]:
+        return [
+            f"{colored('Version:', attrs=['bold'])} {__version__}",
+            f"{colored('Usage:', attrs=['bold'])} q [{colored('-flag', cls.ACCENT_COLOR)} [{colored('value', cls.DIM_COLOR)}]] ...",
+            "",
+            "  Flags can be combined: -sx = -s -x",
+            "  Use -- to disable remaining flag parsing.",
+            "  Commands are mutually exclusive.",
+        ]
+
+    @classmethod
+    def _help_text_flags(cls, verbose: bool = False) -> list[str]:
+        type_col_len = max(len(f"[{flag.value_type.value}]") for flag in FLAG_MAP.values())
+        desc_col_len = max(len(flag.desc) for flag in FLAG_MAP.values())
 
         command_rows, option_rows = [], []
         for flag in sorted(FLAG_MAP.values(), key=lambda flag: flag.char):
-            char = colored(f"-{flag.char}", self.ACCENT_COLOR)
+            char = colored(f"-{flag.char}", cls.ACCENT_COLOR)
 
             accent_word = flag.__name__.removesuffix("Command").removesuffix("Option").lower()
-            desc = flag.desc.ljust(desc_col_len).replace(accent_word, colored(accent_word, self.ACCENT_COLOR))
+            desc = flag.desc.ljust(desc_col_len).replace(accent_word, colored(accent_word, cls.ACCENT_COLOR))
 
             value_type = flag.value_type.value or ""
             if value_type:
                 if flag.value_default:
                     value_type += f"={flag.value_default}"
                 value_type = f"<{value_type}>" if flag.value_required else f"[{value_type}]"
-            value_type = colored(value_type.ljust(type_col_len), self.DIM_COLOR)
+            value_type = colored(value_type.ljust(type_col_len), cls.DIM_COLOR)
 
             row = f"  {char}  {value_type}  {desc}"
             if verbose:
                 if hasattr(flag, "tier"):
-                    tier = colored(flag.tier.value.rjust(tier_col_len), self.DIM_COLOR)
+                    tier = colored(f"{flag.tier.value} tier", cls.DIM_COLOR)
                     row += f"  {tier}"
-
             row = row.rstrip()
 
             if issubclass(flag, Command):
@@ -350,14 +370,7 @@ class HelpCommand(LLMCommand):
             else:
                 option_rows.append(row)
 
-        lines = [
-            f"{colored('Version:', attrs=['bold'])} {__version__}",
-            f"{colored('Usage:', attrs=['bold'])} q [{colored('-flag', self.ACCENT_COLOR)} [{colored('value', self.DIM_COLOR)}]] ...",
-            "",
-            "  Flags can be combined: -sx = -s -x",
-            "  Use -- to disable remaining flag parsing.",
-            "  Commands are mutually exclusive.",
-            "",
+        return [
             colored("Commands:", attrs=["bold"]),
             *command_rows,
             "",
@@ -365,15 +378,18 @@ class HelpCommand(LLMCommand):
             *option_rows,
         ]
 
-        if verbose:
-            unused_flags = {f"-{char}" for char in string.ascii_lowercase if char not in FLAG_MAP}
-            lines += [
-                "",
-                colored("Unused:", attrs=["bold"]),
-                "  " + colored(", ".join(sorted(unused_flags)), self.ACCENT_COLOR),
-            ]
-
-        return "\n".join(lines)
+    @classmethod
+    def _help_text_providers(cls, verbose: bool = False) -> list[str]:
+        items = []
+        for provider in list_providers():
+            item = colored(provider, cls.ACCENT_COLOR)
+            if verbose and provider == StateManager.default_provider():
+                item += colored(" (default)", cls.DIM_COLOR)
+            items.append(item)
+        return [
+            colored("Providers:", attrs=["bold"]),
+            f"  {', '.join(items)}",
+        ]
 
 
 class ImageCommand(LLMCommand):
@@ -449,14 +465,13 @@ class ModelOption(Flag):
     @classmethod
     def resolve(cls, value: str, client_name: str, tier: Tier) -> tuple[str, str, dict]:
         """Resolve a model flag value to (provider, model_name, model_args)."""
-        providers = set(MODEL_CONFIGS)
         tiers = {t.value for t in Tier}
 
         # provider:tier/model
         if ":" in value:
             provider, suffix = value.split(":", 1)
-            if provider not in providers:
-                raise InputError(f"unknown provider: {provider}")
+            if provider not in list_providers():
+                raise InputError(f"invalid provider: {provider}")
             # provider:tier (e.g. "openai:high")
             if suffix in tiers:
                 return provider, *lookup(provider, client_name, Tier(suffix))
@@ -464,7 +479,7 @@ class ModelOption(Flag):
             return provider, suffix, {}
 
         # provider (e.g. "openai")
-        if value in providers:
+        if value in list_providers():
             return value, *lookup(value, client_name, tier)
 
         # tier (e.g. "high")
@@ -569,6 +584,10 @@ class DirectoryOption(Flag):
         raise NotImplementedError()
 
 
+class G_Option(Flag):
+    char = "g"
+    desc = "unknown"
+
 class JsonOption(Flag):
     char = "j"
     desc = "output in JSON"
@@ -581,6 +600,11 @@ class ParametersOption(Flag):
     value_required = True
 
 
+class Q_Option(Flag):
+    char = "q"
+    desc = "unknown"
+
+
 class RetrievalCommand(Command):
     char = "r"
     desc = "retrieval-augmented generation"
@@ -589,10 +613,12 @@ class RetrievalCommand(Command):
     tier = Tier.MED
 
 
-class UserCommand(Command):
+class UnsafeOption(Option):
     char = "u"
-    desc = "user command"
-    value_type = ValueType.STR
-    value_required = True
-    tier = Tier.MED
+    desc = "unsafe shell command"
+
+
+class Y_Option(Flag):
+    char = "y"
+    desc = "unknown"
 """

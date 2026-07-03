@@ -1,9 +1,11 @@
-from .clients import load_client_class
+from importlib.metadata import version
+
+from .clients import list_clients, list_providers, load_client_class
 from .clients.base import Client, Message, Role
 
-__all__ = ["Client", "Message", "Role", "load_client_class"]
+__all__ = ["Client", "Message", "Role", "list_clients", "list_providers", "load_client_class"]
 
-__version__ = "2.0.0.dev13"
+__version__ = version("q-bot")
 
 # expose providers as top-level modules
 import sys as _sys  # noqa: I001

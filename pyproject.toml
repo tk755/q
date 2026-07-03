@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "q-bot"
-dynamic = ["version"]
+version = "2.0.0.dev14"
 description = "An expressive, composable, provider-agnostic command-line interface for LLMs."
 requires-python = ">=3.12"
 dependencies = [
@@ -34,6 +34,3 @@ Repository = "https://github.com/tk755/q"
 
 [tool.setuptools.packages.find]
 include = ["q*"]
-
-[tool.setuptools.dynamic]
-version = {attr = "q.__version__"}

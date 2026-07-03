@@ -121,7 +121,7 @@ MODEL_CONFIGS["xai"]["WebClient"] = MODEL_CONFIGS["xai"]["TextClient"]
 def lookup(provider: str, client_name: str, tier: Tier) -> tuple[str, dict]:
     """Return (model_name, model_args) for a given provider, client, and tier."""
     if provider not in MODEL_CONFIGS:
-        raise InputError(f"unknown provider: {provider}")
+        raise InputError(f"invalid provider: {provider}")
     if client_name not in MODEL_CONFIGS[provider]:
         raise InputError(f"{provider} does not support {client_name}")
 
