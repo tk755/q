@@ -12,10 +12,10 @@ Install using any pip-compatible package manager (e.g. `pip`, `pipx`, `uv`, etc.
 pipx install 'q-bot>=2.0.0.dev0'
 ```
 
-> [!NOTE]
-> Version `2.0` is currently published as a pre-release build, requiring the version specifier.
-
 Requires Python 3.12+.
+
+> [!NOTE]
+> Version `2.0` is currently published as a pre-release build, so it requires the version specifier.
 
 # Syntax
 
@@ -36,7 +36,7 @@ $ q -s auto hide the dock          # on macOS
 defaults write com.apple.dock autohide -bool true; killall Dock
 ```
 
-`-x` automatically runs the generated command without copying it to the clipboard.
+`-x` runs the generated command in your current shell instead of copying it.
 
 ```bash
 $ q -sx count commits on this branch
@@ -54,20 +54,24 @@ $ q -sx
 Branch 'dev' set up to track remote branch 'dev' from 'origin'.
 ```
 
-<!-- TODO: Combine `-a` with `-s` and `-x` to continuously generate commands until the prompt is satisfied.
-
+<!-- 
+TODO: This applies iteratively.
 ```bash
-$ q -sxa get cuda version
+$ q -sx get cuda version
 > nvcc --version
 bash: nvcc: command not found
+$ q -sx
 > cat /usr/local/cuda/version.txt
 cat: /usr/local/cuda/version.txt: No such file or directory
+$ q -sx
 > nvidia-smi | grep "CUDA Version"
 | NVIDIA-SMI 560.35.02    Driver Version: 560.94    CUDA Version: 12.6 |
 ``` -->
 
 > [!IMPORTANT]
-> Reading the last command requires a shell hook. Run `q -s` for instructions.
+> Running commands in your current shell and reading your last command require a shell hook. Without it, `-x` falls back to a subprocess (where effects like `cd` do not persist) and `-s` with no prompt fails.
+>
+> Run `q -s` for instructions on installing the hook.
 
 ## Image (`-i`)
 
@@ -171,7 +175,7 @@ $ q -c quicksort -m anthropic:high  # override both provider and tier
 `-m` can also select a specific model from a provider.
 
 ```bash
-$ q -c quicksort -m anthropic:claude-opus-4-8   # specify model
+$ q -c quicksort -m anthropic:claude-fable-5    # specify model
 ```
 
 > [!NOTE]
@@ -221,7 +225,7 @@ $ q -t compare these -f chart.png report.txt
 # Library Usage
 
 `q` implements a small provider-agnostic library, built on two principles:
-- **Single-capability clients:** clients have a static return type `T` and do not require mode switching or tool-selection.
+- **Single-capability clients:** clients have a static return type `T` and do not require mode switching or tool selection.
 - **Single interface and state model:** clients expose a uniform interface and state model so they can be swapped dynamically mid-conversation.
 
 ## Clients

@@ -58,10 +58,10 @@ class Client[T](ABC):
             raise TypeError(f"unexpected output type: {type(output).__name__}")
         return output
 
-    async def batch_generate(self, prompt_list: list[str], system: str | None = None, images: list[bytes] | None = None, n_threads: int = 8) -> list[T]:
+    async def batch_generate(self, prompt_list: list[str], system: str | None = None, images: list[bytes] | None = None, n: int = 8) -> list[T]:
         """Concurrently generate a response to each input with the current history; *does not update state*."""
         system = system if system is not None else self.system
-        semaphore = asyncio.Semaphore(n_threads)
+        semaphore = asyncio.Semaphore(n)
 
         async def process(prompt: str) -> T:
             async with semaphore:

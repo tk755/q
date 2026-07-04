@@ -8,6 +8,7 @@ import re
 import string
 import subprocess
 import sys
+import textwrap
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
@@ -259,16 +260,21 @@ class ShellCommand(LLMCommand):
         cmd = os.environ.get("Q_CMD", None)
         exit_code = os.environ.get("Q_EXIT", None)
         if cmd is None or exit_code is None:
-            raise InputError(
-                f"-{self.char} requires shell integration to fix last command.\n\n"
-                "Add this line to ~/.bashrc:\n"
-                '  q() { Q_EXIT=$? Q_CMD=$(fc -ln -1) command q "$@"; }'
-            )
+            rc_file = "~/.zshrc" if "zsh" in os.environ.get("SHELL", "") else "~/.bashrc"
+            try:
+                pyperclip.copy(self._shell_hook())
+                qprint(f"Shell hook copied to clipboard; paste it in {rc_file}", color="yellow", file=sys.stderr)
+            except pyperclip.PyperclipException:
+                qprint(f"Copy the following shell hook to {rc_file}:\n\n{self._shell_hook()}\n", color="yellow", file=sys.stderr)
+            raise InputError(f"-{self.char} requires a shell hook to fix last command")
+
+        cmd = cmd.strip()
+        if not cmd:
+            raise InputError(f"-{self.char} has nothing to fix; no command found")
         if exit_code == "0":
             raise InputError(f"-{self.char} has nothing to fix; last command succeeded")
 
         # run shell command and capture output
-        cmd = cmd.strip()
         stderr = stdout = b""
         try:
             proc = await asyncio.create_subprocess_shell(
@@ -291,9 +297,28 @@ class ShellCommand(LLMCommand):
         """Execute shell command if applicable."""
         if ExecuteOption in self.opts:
             qprint(f"> {response}", color="green", file=sys.stderr)
-            subprocess.run(response, shell=True)
+            exec_path = os.environ.get("Q_EXEC")
+            if exec_path:
+                # shell hook installed; run in parent shell
+                Path(exec_path).write_text(response)
+            else:
+                # no shell hook; run in subprocess
+                subprocess.run(response, shell=True)
         else:
             super().process_response(response)
+
+    @staticmethod
+    def _shell_hook() -> str:
+        return textwrap.dedent(r"""
+            # shell hook for q -s
+            q() {
+              local rc=$? f=${TMPDIR:-/tmp}/q-exec.$$ p
+              read -r p < <(fc -ln -1); [[ $p =~ ^q(\ |$) ]] && p=$(cat "$f" 2>/dev/null); : >"$f"
+              Q_EXIT=$rc Q_CMD="$p" Q_EXEC="$f" command q "$@"; rc=$?
+              [[ -s $f ]] && { eval "$(<"$f")"; rc=$?; }
+              return "$rc"
+            }
+        """).strip()
 
 
 class HelpCommand(LLMCommand):
@@ -613,7 +638,7 @@ class RetrievalCommand(Command):
     tier = Tier.MED
 
 
-class UnsafeOption(Option):
+class UnsafeOption(Flag):
     char = "u"
     desc = "unsafe shell command"
 
