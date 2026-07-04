@@ -132,7 +132,7 @@ class LLMCommand(Command):
 
     def process_response(self, response: str) -> None:
         """Format response and route output."""
-        formatted_response = self._format_text_response(response)
+        formatted_response = self._format_text_response(response.strip())
         if OutputOption in self.opts:
             path = self.opts[OutputOption]
             Path(path).write_text(formatted_response)
@@ -147,16 +147,18 @@ class LLMCommand(Command):
                     qprint("Copied to clipboard.", color="yellow", file=sys.stderr)
 
     @staticmethod
+    def _format_code_response(text: str) -> str:
+        """Unwrap a response-level code fence or inline-code span."""
+        text = re.sub(r"^```.*?\n(.*)\n```$", r"\1", text, flags=re.DOTALL)
+        return re.sub(r"^`([^`\n]+)`$", r"\1", text)
+
+    @staticmethod
     def _format_text_response(text: str) -> str:
         """Normalize the formatting of an LLM text response."""
-        # shorten links from web search responses
-        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text).strip()
+        text = LLMCommand._format_code_response(text)
 
         # convert two-plus newlines into only two
         text = re.sub(r"\n{2,}", "\n\n", text)
-
-        # remove formatting from response-level code blocks
-        text = re.sub(r"^```.*?\n(.*)\n```$", r"\1", text, flags=re.DOTALL)
 
         return text
 
@@ -211,6 +213,15 @@ class WebCommand(LLMCommand):
     client_name = "WebClient"
     system = "Search the web and reply with only the answer, as a bare value such as a name, number, or date, with nothing else: no full sentence, no restatement, no context, no explanation."
 
+    @staticmethod
+    def _format_text_response(text: str) -> str:
+        return LLMCommand._format_text_response(WebCommand._format_web_response(text))
+
+    @staticmethod
+    def _format_web_response(text: str) -> str:
+        """Shorten links from web search responses."""
+        return re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+
 
 class CodeCommand(LLMCommand):
     char = "c"
@@ -237,19 +248,6 @@ class ShellCommand(LLMCommand):
     @property
     def system(self) -> str:
         return f"Generate the single simplest, most direct idiomatic shell command for the task on {self._get_system_info()}. Output only the command. Never use destructive commands (rm -rf, dd, mkfs, chmod -R, chown, kill -9)."
-
-    def _get_system_info(self) -> str:
-        shell = os.environ.get("SHELL") or os.environ.get("COMSPEC")
-        shell = Path(shell).name if shell else ""
-
-        sys_name = platform.system()
-        if sys_name == "Linux":
-            with contextlib.suppress(ImportError):
-                sys_name = distro.name(pretty=True)
-
-        if shell:
-            return f"{sys_name} using {shell}"
-        return sys_name
 
     async def build_prompt(self, file_text: str) -> str:
         """Build prompt to fix last shell command if no prompt is provided."""
@@ -295,6 +293,7 @@ class ShellCommand(LLMCommand):
 
     def process_response(self, response: str) -> None:
         """Execute shell command if applicable."""
+        response = self._format_code_response(response.strip())
         if ExecuteOption in self.opts:
             qprint(f"> {response}", color="green", file=sys.stderr)
             exec_path = os.environ.get("Q_EXEC")
@@ -319,6 +318,20 @@ class ShellCommand(LLMCommand):
               return "$rc"
             }
         """).strip()
+
+    @staticmethod
+    def _get_system_info() -> str:
+        shell = os.environ.get("SHELL") or os.environ.get("COMSPEC")
+        shell = Path(shell).name if shell else ""
+
+        sys_name = platform.system()
+        if sys_name == "Linux":
+            with contextlib.suppress(ImportError):
+                sys_name = distro.name(pretty=True)
+
+        if shell:
+            return f"{sys_name} using {shell}"
+        return sys_name
 
 
 class HelpCommand(LLMCommand):
