@@ -9,13 +9,10 @@
 Install using any pip-compatible package manager (e.g. `pip`, `pipx`, `uv`, etc.).
 
 ```bash
-pipx install 'q-bot>=2.0.0.dev0'
+pipx install 'q-bot>=2.0.0a1'
 ```
 
 Requires Python 3.12+.
-
-> [!NOTE]
-> Version `2.0` is currently published as a pre-release build, so it requires the version specifier.
 
 # Syntax
 
